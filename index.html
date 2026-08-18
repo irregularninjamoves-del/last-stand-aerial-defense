@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#05070c">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>LAST STAND: Aerial Defense</title>
 <style>
   html,body{margin:0;height:100%;background:#05070c;overflow:hidden;font-family:"Segoe UI",system-ui,sans-serif;color:#dfe7f5}
@@ -40,7 +42,7 @@ window.addEventListener('resize', fitCanvas); fitCanvas();
 // Put PNGs in img/ (authored at 2x). SPR.get('player') returns an Image once loaded, else null -> caller draws vector.
 const SPR = (() => {
   const cache = {}, state = {};
-  const FILES = { player: 'img/player.png', drone: 'img/drone.png', bomber: 'img/bomber.png', bomber_open: 'img/bomber_open.png', interceptor: 'img/interceptor.png', cannon: 'img/cannon.png', cannon_fire: 'img/cannon_fire.png', swarm: 'img/swarm.png', swarm_up: 'img/swarm_up.png', boss: 'img/boss_mothership.png', boss_armed: 'img/boss_armed.png', boss_damaged: 'img/boss_damaged.png', boss_prime: 'img/boss_prime.png', boss_prime_armed: 'img/boss_prime_armed.png', boss_prime_damaged: 'img/boss_prime_damaged.png', b_assault: 'img/b_assault.png', b_laser: 'img/b_laser.png', b_plasma: 'img/b_plasma.png', b_grenade: 'img/b_grenade.png', e_orange: 'img/e_orange.png', e_pink: 'img/e_pink.png', e_violet: 'img/e_violet.png', e_red: 'img/e_red.png', pk_health: 'img/pk_health.png', pk_laser: 'img/pk_laser.png', pk_plasma: 'img/pk_plasma.png', pk_grenade: 'img/pk_grenade.png', pk_rail: 'img/pk_rail.png', pk_beam: 'img/pk_beam.png', mine: 'img/mine.png', mine_on: 'img/mine_on.png', debris_a: 'img/debris_a.png', debris_b: 'img/debris_b.png', debris_c: 'img/debris_c.png', crate: 'img/crate.png' };
+  const FILES = { player: 'img/player.png', drone: 'img/drone.png', bomber: 'img/bomber.png', bomber_open: 'img/bomber_open.png', interceptor: 'img/interceptor.png', cannon: 'img/cannon.png', cannon_fire: 'img/cannon_fire.png', swarm: 'img/swarm.png', swarm_up: 'img/swarm_up.png', boss: 'img/boss_mothership.png', boss_armed: 'img/boss_armed.png', boss_damaged: 'img/boss_damaged.png', boss_prime: 'img/boss_prime.png', boss_prime_armed: 'img/boss_prime_armed.png', boss_prime_damaged: 'img/boss_prime_damaged.png', b_assault: 'img/b_assault.png', b_laser: 'img/b_laser.png', b_plasma: 'img/b_plasma.png', b_grenade: 'img/b_grenade.png', e_orange: 'img/e_orange.png', e_pink: 'img/e_pink.png', e_violet: 'img/e_violet.png', e_red: 'img/e_red.png', pk_health: 'img/pk_health.png', pk_laser: 'img/pk_laser.png', pk_plasma: 'img/pk_plasma.png', pk_grenade: 'img/pk_grenade.png', pk_rail: 'img/pk_rail.png', pk_beam: 'img/pk_beam.png', mine: 'img/mine.png', mine_on: 'img/mine_on.png', debris_a: 'img/debris_a.png', debris_b: 'img/debris_b.png', debris_c: 'img/debris_c.png', crate: 'img/crate.png', logo: 'img/logo.png', hero: 'img/hero.png' };
   for (const b of ['coastal', 'urban', 'mountain', 'beach', 'desert', 'orbital']) for (const l of ['far', 'mid', 'near']) FILES['bg_' + b + '_' + l] = 'img/bg_' + b + '_' + l + '.png';
   for (const id of ['rapid', 'multi', 'pierce', 'artillery', 'crit', 'explosive', 'nuke', 'autorepair', 'shield', 'weld', 'recovery', 'ablative', 'drone', 'cdr', 'hull', 'dash', 'threshold', 'heavy', 'momentum', 'armor', 'reactive', 'range', 'threat', 'lock', 'weakpoint', 'salvage', 'predict', 'uplink']) FILES['icon_' + id] = 'img/icon_' + id + '.png';
   for (const id of ['dash', 'weld', 'drone', 'strike', 'nuke', 'shield', 'react']) FILES['ab_' + id] = 'img/ab_' + id + '.png';
@@ -1888,16 +1890,18 @@ function drawMenu(dt) {
   const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0b1230'); g.addColorStop(0.6, '#3a4f7f'); g.addColorStop(1, '#c48a5a'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#141d30'; for (let i = 0; i < 40; i++) { const x = ((i * 97 - menuT * 30) % (W + 100) + W + 100) % (W + 100) - 50; const h = 60 + ((i * 53) % 200); ctx.fillRect(x, H - h, 40 + (i % 3) * 15, h); }
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, 0, W, H);
-  // jet
-  ctx.save(); ctx.translate(W / 2 + Math.sin(menuT) * 30, 400 + Math.sin(menuT * 1.3) * 12); ctx.scale(2.2, 2.2);
+  const logoIm = SPR.get('logo'), heroIm = SPR.get('hero');
+  if (heroIm) { const hs = 176; ctx.drawImage(heroIm, W / 2 - hs / 2 + Math.sin(menuT) * 4, 290 + Math.sin(menuT * 1.3) * 4, hs, hs); }
+  if (logoIm) { const lw = 660, lh = logoIm.height * lw / logoIm.width; ctx.drawImage(logoIm, W / 2 - lw / 2, 28, lw, lh); }
+  // jet (fallback when no hero art)
+  if (!heroIm) { ctx.save(); ctx.translate(W / 2 + Math.sin(menuT) * 30, 400 + Math.sin(menuT * 1.3) * 12); ctx.scale(2.2, 2.2);
   const fl = 18 + Math.random() * 12; const eg = ctx.createLinearGradient(-22, 0, -22 - fl, 0); eg.addColorStop(0, 'rgba(120,200,255,0.95)'); eg.addColorStop(1, 'rgba(255,120,40,0)'); ctx.fillStyle = eg; ctx.beginPath(); ctx.moveTo(-22, -5); ctx.lineTo(-22 - fl, 0); ctx.lineTo(-22, 5); ctx.closePath(); ctx.fill();
   ctx.fillStyle = '#c9d3e6'; ctx.strokeStyle = '#3a4560'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(30, 0); ctx.lineTo(8, -7); ctx.lineTo(-24, -6); ctx.lineTo(-28, 0); ctx.lineTo(-24, 6); ctx.lineTo(8, 7); ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.fillStyle = '#8fa2c4'; ctx.beginPath(); ctx.moveTo(6, -4); ctx.lineTo(-10, -22); ctx.lineTo(-20, -22); ctx.lineTo(-14, -4); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(6, 4); ctx.lineTo(-10, 22); ctx.lineTo(-20, 22); ctx.lineTo(-14, 4); ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.fillStyle = '#4fd0ff'; ctx.beginPath(); ctx.ellipse(10, -1, 8, 4, 0, 0, TAU); ctx.fill();
-  ctx.restore();
-  title('LAST STAND', 150, '#ffd36b', 72);
-  title('AERIAL DEFENSE', 205, '#fff', 30);
-  text('Arcade horde shooter roguelike  •  1000 levels, each harder than the last  •  How deep can you go?', W / 2, 245, '#cfd8ea', 14, 'center');
+  ctx.restore(); }
+  if (!logoIm) { title('LAST STAND', 150, '#ffd36b', 72); title('AERIAL DEFENSE', 205, '#fff', 30); }
+  text('Arcade horde shooter roguelike  •  1000 levels, each harder than the last  •  How deep can you go?', W / 2, logoIm ? 278 : 245, '#cfd8ea', 14, 'center');
   if (overlayOpen) return;
   button(W / 2 - 130, 470, 260, 54, MOBILE.ui ? 'TAP TO LAUNCH' : 'LAUNCH', () => { newRun(false); }, { color: '#e0563c' });
   const dailyDone = meta.daily.date === todayKey();
