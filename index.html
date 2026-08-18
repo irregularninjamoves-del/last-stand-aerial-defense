@@ -54,7 +54,9 @@ const SPR = (() => {
   // is the image opaque at its top-left? (far layers that carry their own sky) — cached
   const opaque = {};
   function isOpaque(id) { const im = get(id); if (!im) return false; if (opaque[id] !== undefined) return opaque[id]; const c = document.createElement('canvas'); c.width = 4; c.height = 4; const x = c.getContext('2d'); x.drawImage(im, 0, 0, 4, 4, 0, 0, 4, 4); const d = x.getImageData(0, 0, 1, 1).data; opaque[id] = d[3] > 250 ? 'rgb(' + d[0] + ',' + d[1] + ',' + d[2] + ')' : false; return opaque[id]; }
-  return { get, draw, tile, isOpaque, FILES };
+  const bottoms = {};
+  function bottomColor(id) { const im = get(id); if (!im) return null; if (bottoms[id] !== undefined) return bottoms[id]; const c = document.createElement('canvas'); c.width = 8; c.height = 1; const x = c.getContext('2d'); x.drawImage(im, 0, im.height - 2, im.width, 1, 0, 0, 8, 1); let r = 0, g = 0, b = 0, n = 0; const d = x.getImageData(0, 0, 8, 1).data; for (let i = 0; i < 8; i++) if (d[i * 4 + 3] > 200) { r += d[i * 4]; g += d[i * 4 + 1]; b += d[i * 4 + 2]; n++; } bottoms[id] = n >= 4 ? 'rgb(' + Math.round(r / n) + ',' + Math.round(g / n) + ',' + Math.round(b / n) + ')' : null; return bottoms[id]; }
+  return { get, draw, tile, isOpaque, bottomColor, FILES };
 })();
 
 // ---------------------------------------------------------------- utils
@@ -1387,7 +1389,7 @@ function drawParallax() {
     }
     for (const w of G.wrecks) { const x = ((w.x - G.scroll * 0.2) % (W * 2.2) + W * 2.2) % (W * 2.2) - 200; drawWreck(x, w.y - cy * 0.15, w.s, w.rot, w.type); }
     if (mid) SPR.tile('bg_' + bio + '_mid', G.scroll * 0.18 + cx * 0.18, H * 0.87 - cy * 0.15 - mid.height);
-    if (near) { const ny = H + 6 - cy * 0.3 - near.height; SPR.tile('bg_' + bio + '_near', G.scroll * 0.4 + cx * 0.4, ny); ctx.fillStyle = th.ground; ctx.fillRect(0, ny + near.height - 2, W, H); }
+    if (near) { const ny = H + 6 - cy * 0.3 - near.height; SPR.tile('bg_' + bio + '_near', G.scroll * 0.4 + cx * 0.4, ny); ctx.fillStyle = SPR.bottomColor('bg_' + bio + '_near') || th.ground; ctx.fillRect(0, ny + near.height - 2, W, H); }
     else { ctx.fillStyle = th.ground; ctx.fillRect(0, H - 40 - cy * 0.3, W, 60); }
     ctx.strokeStyle = 'rgba(20,20,30,0.7)'; ctx.lineWidth = 1.5;
     for (const b of G.birds) { const x = b.fx + b.ox, y = b.fy + b.oy - cy * 0.2; const flap = Math.sin(G.time * 8 + b.ph) * 4; ctx.beginPath(); ctx.moveTo(x - 6, y - flap); ctx.lineTo(x, y); ctx.lineTo(x + 6, y - flap); ctx.stroke(); }
