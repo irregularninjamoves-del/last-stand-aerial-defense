@@ -679,7 +679,7 @@ function spawnExplosion(x, y, r, c) { G.fx.push({ type: 'boom', x, y, r, c, t: 0
 function pickWeather(theme) {
   let list = WEATHERS.map(w => ({ ...w }));
   if (theme.sandBias) list.find(w => w.id === 'sand').w = 40;
-  if (theme.space) list = list.filter(w => ['clear', 'cloudy', 'storm'].includes(w.id));
+  if (theme.space) return WEATHERS[0]; // orbital: no weather up here
   const total = list.reduce((s, w) => s + w.w, 0);
   let r = G.rng() * total;
   for (const w of list) { r -= w.w; if (r <= 0) return w; }
@@ -1381,9 +1381,10 @@ function drawParallax() {
   const far = SPR.get('bg_' + bio + '_far'), mid = SPR.get('bg_' + bio + '_mid'), near = SPR.get('bg_' + bio + '_near');
   if (far || mid || near) {
     if (far) {
-      const top = H * 0.70 - cy * 0.06 - far.height;
+      const full = far.height >= H * 0.9; // full-sky backdrop (e.g. orbital) vs horizon band
+      const top = full ? Math.min(0, -cy * 0.04) : H * 0.70 - cy * 0.06 - far.height;
       const sky = SPR.isOpaque('bg_' + bio + '_far');
-      if (sky) { ctx.fillStyle = sky; ctx.fillRect(0, 0, W, Math.max(0, top + 2)); }
+      if (sky && !full) { ctx.fillStyle = sky; ctx.fillRect(0, 0, W, Math.max(0, top + 2)); }
       SPR.tile('bg_' + bio + '_far', G.scroll * 0.06 + cx * 0.06, top);
       if (sky) weatherTint();
     }
