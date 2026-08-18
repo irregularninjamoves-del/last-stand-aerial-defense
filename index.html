@@ -41,7 +41,7 @@ window.addEventListener('resize', fitCanvas); fitCanvas();
 const SPR = (() => {
   const cache = {}, state = {};
   const FILES = { player: 'img/player.png', drone: 'img/drone.png', bomber: 'img/bomber.png', bomber_open: 'img/bomber_open.png', interceptor: 'img/interceptor.png', cannon: 'img/cannon.png', cannon_fire: 'img/cannon_fire.png', swarm: 'img/swarm.png', swarm_up: 'img/swarm_up.png', boss: 'img/boss_mothership.png', boss_armed: 'img/boss_armed.png', boss_damaged: 'img/boss_damaged.png', boss_prime: 'img/boss_prime.png', boss_prime_armed: 'img/boss_prime_armed.png', boss_prime_damaged: 'img/boss_prime_damaged.png', b_assault: 'img/b_assault.png', b_laser: 'img/b_laser.png', b_plasma: 'img/b_plasma.png', b_grenade: 'img/b_grenade.png', e_orange: 'img/e_orange.png', e_pink: 'img/e_pink.png', e_violet: 'img/e_violet.png', e_red: 'img/e_red.png', pk_health: 'img/pk_health.png', pk_laser: 'img/pk_laser.png', pk_plasma: 'img/pk_plasma.png', pk_grenade: 'img/pk_grenade.png', pk_rail: 'img/pk_rail.png', pk_beam: 'img/pk_beam.png', mine: 'img/mine.png', mine_on: 'img/mine_on.png', debris_a: 'img/debris_a.png', debris_b: 'img/debris_b.png', debris_c: 'img/debris_c.png', crate: 'img/crate.png' };
-  for (const b of ['coastal', 'urban', 'mountain', 'desert', 'orbital']) for (const l of ['far', 'mid', 'near']) FILES['bg_' + b + '_' + l] = 'img/bg_' + b + '_' + l + '.png';
+  for (const b of ['coastal', 'urban', 'mountain', 'beach', 'desert', 'orbital']) for (const l of ['far', 'mid', 'near']) FILES['bg_' + b + '_' + l] = 'img/bg_' + b + '_' + l + '.png';
   for (const id of ['rapid', 'multi', 'pierce', 'artillery', 'crit', 'explosive', 'nuke', 'autorepair', 'shield', 'weld', 'recovery', 'ablative', 'drone', 'cdr', 'hull', 'dash', 'threshold', 'heavy', 'momentum', 'armor', 'reactive', 'range', 'threat', 'lock', 'weakpoint', 'salvage', 'predict', 'uplink']) FILES['icon_' + id] = 'img/icon_' + id + '.png';
   for (const id of ['dash', 'weld', 'drone', 'strike', 'nuke', 'shield', 'react']) FILES['ab_' + id] = 'img/ab_' + id + '.png';
   for (const id of ['hull', 'aim', 'engine', 'kit', 'headstart', 'magnet', 'wind', 'arsenal_grenade', 'arsenal_rail', 'arsenal_beam']) FILES['hg_' + id] = 'img/hg_' + id + '.png';
@@ -426,6 +426,7 @@ const LEVELS = [
   { name: 'COASTAL DEFENSE', sub: 'Harbor city under siege', sky: ['#1a2b57', '#5b7fb5', '#c8a26a'], ground: '#0c1a2c', water: true, mtn: '#2b3f66', city: '#141d30', mid: '#22345a' },
   { name: 'URBAN RUINS', sub: 'The capital burns', sky: ['#2b1c2c', '#7a4a3c', '#d09a5a'], ground: '#1a1210', water: false, mtn: '#3a2a35', city: '#1d1518', mid: '#33232a', bigcity: true },
   { name: 'MOUNTAIN PASS', sub: 'Through the northern range', sky: ['#0f1c30', '#3d5f8a', '#b8d3e8'], ground: '#1a2430', water: false, mtn: '#5c6f88', city: '#2a3546', mid: '#3d4c60', snow: true },
+  { name: 'BEACHHEAD', sub: 'Tropical landing zone', sky: ['#1c4f8a', '#4fa3d8', '#ffe9b8'], ground: '#1f6d7a', water: true, mtn: '#3f7f8f', city: '#2c5f4a', mid: '#3d8a6a', beach: true },
   { name: 'DESERT WASTES', sub: 'Scorched southern flats', sky: ['#3a1e0e', '#b0603a', '#f0c070'], ground: '#4a2f16', water: false, mtn: '#7a4a2a', city: '#3d2614', mid: '#5c3a1c', sandBias: true },
   { name: 'ORBITAL ASCENT', sub: 'Strike the mothership fleet', sky: ['#02030a', '#0a1030', '#2a2050'], ground: '#05070f', water: false, mtn: '#141a30', city: '#0b0f22', mid: '#1a2040', space: true },
 ];
@@ -684,6 +685,7 @@ function spawnExplosion(x, y, r, c) { G.fx.push({ type: 'boom', x, y, r, c, t: 0
 function pickWeather(theme) {
   let list = WEATHERS.map(w => ({ ...w }));
   if (theme.sandBias) list.find(w => w.id === 'sand').w = 40;
+  if (theme.beach) { list.find(w => w.id === 'clear').w = 35; list.find(w => w.id === 'fog').w = 3; list.find(w => w.id === 'sand').w = 0; }
   if (theme.space) return WEATHERS[0]; // orbital: no weather up here
   const total = list.reduce((s, w) => s + w.w, 0);
   let r = G.rng() * total;
@@ -753,7 +755,7 @@ function buildPlan(idx) {
     usedTiles.add(tile.name);
     plan.push({ type, tile, name: tile.name });
   }
-  plan.push({ type: 'boss', name: idx % 5 === 4 ? 'HIVE MOTHERSHIP PRIME' : 'MOTHERSHIP' });
+  plan.push({ type: 'boss', name: idx % LEVELS.length === LEVELS.length - 1 ? 'HIVE MOTHERSHIP PRIME' : 'MOTHERSHIP' });
   return plan;
 }
 
@@ -946,7 +948,7 @@ function tryWeaponDrop(x, y, force) {
 
 // ---------------------------------------------------------------- BOSS
 function spawnBoss() {
-  const L = G.levelIdx, final = L % 5 === 4;
+  const L = G.levelIdx, final = L % LEVELS.length === LEVELS.length - 1;
   const hp = Math.round((12000 + 6500 * L + 60 * L * L) * (final ? 1.5 : 1) * (1 + Math.max(0, G.level - 6) * 0.06));
   G.boss = { isBoss: true, type: 'boss', x: W + 260, y: H / 2, r: 70, hp, maxHp: hp, t: 0, pt: 0, phase: 1, tele: 0, vuln: 0, flash: 0, dmgMult: 1.4 + L * 0.2 + L * L * 0.0008, color: final ? '#ff4d8d' : '#ff6b3d', xp: Math.round((350 + 120 * L) * (1 + L * 0.05)), dead: false, state: 'enter', laser: null, charge: null, spawnT: 0, sub: 0, name: final ? 'HIVE MOTHERSHIP PRIME' : 'MOTHERSHIP MK-' + (L + 1), final };
   banner('WARNING', '#ff5d5d', G.boss.name + ' APPROACHING'); Audio.sfx.warn(); Music.play('boss');
@@ -1377,12 +1379,12 @@ function drawSky() {
   // distant explosions (background flashes)
   for (const f of G.flashes) if (f.bg) { const a = f.t / 0.35; const rg = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r * (2 - a)); rg.addColorStop(0, `rgba(255,200,120,${0.6 * a})`); rg.addColorStop(1, 'rgba(255,120,60,0)'); ctx.fillStyle = rg; ctx.fillRect(f.x - f.r * 2, f.y - f.r * 2, f.r * 4, f.r * 4); }
 }
-const BIOMES = ['coastal', 'urban', 'mountain', 'desert', 'orbital'];
+const BIOMES = ['coastal', 'urban', 'mountain', 'beach', 'desert', 'orbital'];
 function drawParallax() {
   const th = PX.theme, per = PX.period;
   const cx = G.camX, cy = G.camY;
   // ---- painted layers (per biome) take over when present; procedural silhouettes remain the fallback
-  const bio = BIOMES[G.levelIdx % 5];
+  const bio = BIOMES[G.levelIdx % BIOMES.length];
   const far = SPR.get('bg_' + bio + '_far'), mid = SPR.get('bg_' + bio + '_mid'), near = SPR.get('bg_' + bio + '_near');
   if (far || mid || near) {
     if (far) {
