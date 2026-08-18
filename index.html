@@ -36,6 +36,21 @@ function fitCanvas() {
 }
 window.addEventListener('resize', fitCanvas); fitCanvas();
 
+// ---------------------------------------------------------------- sprites (optional art; vector fallback when a file is missing)
+// Put PNGs in img/ (authored at 2x). SPR.get('player') returns an Image once loaded, else null -> caller draws vector.
+const SPR = (() => {
+  const cache = {}, state = {};
+  const FILES = { player: 'img/player.png', drone: 'img/drone.png', bomber: 'img/bomber.png', interceptor: 'img/interceptor.png', cannon: 'img/cannon.png', swarm: 'img/swarm.png', boss: 'img/boss_mothership.png', boss_prime: 'img/boss_prime.png' };
+  function get(id) {
+    if (state[id] === 'ok') return cache[id];
+    if (state[id] === undefined && FILES[id]) { state[id] = 'loading'; const im = new Image(); im.onload = () => { cache[id] = im; state[id] = 'ok'; }; im.onerror = () => { state[id] = 'missing'; }; im.src = FILES[id]; }
+    return null;
+  }
+  // draw sprite centered at (0,0) in the current transform, scaled so its height (in 1x units) == h; returns true if drawn
+  function draw(id, h, opts = {}) { const im = get(id); if (!im) return false; const s = h / (im.height / 2); const w = im.width / 2 * s; ctx.drawImage(im, -w / 2 + (opts.ox || 0), -h / 2 + (opts.oy || 0), w, h); return true; }
+  return { get, draw, FILES };
+})();
+
 // ---------------------------------------------------------------- utils
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -1140,9 +1155,11 @@ function fireBullets(kind) {
   G.stats.shots++;
   const angles = has('multi') ? [-0.09, 0, 0.09] : [0];
   const pierce = has('pierce') ? 2 : 0;
-  const mounts = kind === 'assault' ? [-9, 9] : [0];
+  const spr = !!SPR.get('player');
+  const mounts = kind === 'assault' ? (spr ? [6, 12] : [-9, 9]) : (spr ? [9] : [0]);
+  const mx = spr ? 14 : 24;
   for (const my of mounts) for (const a of angles) {
-    const b = { x: p.x + 24, y: p.y + my, kind, dmg: wdef.dmg * (angles.length > 1 ? 0.55 : 1), c: wdef.color, t: 2.5, hits: 0, pierce, r: 4, trail: [] };
+    const b = { x: p.x + mx, y: p.y + my, kind, dmg: wdef.dmg * (angles.length > 1 ? 0.55 : 1), c: wdef.color, t: 2.5, hits: 0, pierce, r: 4, trail: [] };
     if (kind === 'assault') { b.vx = 900; b.vy = a * 900; b.r = 3; }
     else if (kind === 'laser') { b.vx = 1300; b.vy = a * 1300; b.r = 3; b.laser = true; }
     else if (kind === 'grenade') { b.vx = 520; b.vy = -170 + a * 400; b.g = 520; b.r = 6; b.t = 2.2; }
@@ -1483,10 +1500,20 @@ function drawPlayer() {
   if (p.railFlash > 0) { const a = p.railFlash / 0.15; ctx.strokeStyle = `rgba(209,155,255,${a})`; ctx.lineWidth = 6 * a + 1; ctx.shadowColor = '#d19bff'; ctx.shadowBlur = 16; ctx.beginPath(); ctx.moveTo(p.x + 24, p.y); ctx.lineTo(W + 20, p.y + (W - p.x) * (p.railAng || 0)); ctx.stroke(); ctx.shadowBlur = 0; }
   ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.tilt);
   if (p.inv > 0 && Math.floor(G.time * 20) % 2 === 0 && p.dashT <= 0) ctx.globalAlpha = 0.4;
-  // exhaust
-  const fl = 18 + Math.random() * 12 * p.thrust + p.thrust * 14;
-  const eg = ctx.createLinearGradient(-22, 0, -22 - fl, 0); eg.addColorStop(0, 'rgba(120,200,255,0.95)'); eg.addColorStop(0.5, 'rgba(255,180,80,0.7)'); eg.addColorStop(1, 'rgba(255,120,40,0)');
-  ctx.fillStyle = eg; ctx.beginPath(); ctx.moveTo(-22, -5); ctx.lineTo(-22 - fl, 0); ctx.lineTo(-22, 5); ctx.closePath(); ctx.fill();
+  const sprite = SPR.get('player');
+  // exhaust (with the sprite the flame is baked in, so just add a thrust-reactive glow behind it)
+  const fl = (sprite ? 6 : 18) + Math.random() * 12 * p.thrust + p.thrust * 14;
+  const ex = sprite ? -34 : -22;
+  const eg = ctx.createLinearGradient(ex, 0, ex - fl, 0); eg.addColorStop(0, sprite ? 'rgba(255,200,90,0.7)' : 'rgba(120,200,255,0.95)'); eg.addColorStop(0.5, 'rgba(255,180,80,0.6)'); eg.addColorStop(1, 'rgba(255,120,40,0)');
+  ctx.fillStyle = eg; ctx.beginPath(); ctx.moveTo(ex, -5); ctx.lineTo(ex - fl, 0); ctx.lineTo(ex, 5); ctx.closePath(); ctx.fill();
+  if (sprite) {
+    // sprite: 48px tall in game units (~74 wide incl. flame); nose sits ~+36, gun pods ~+18..+28 below centerline
+    SPR.draw('player', 50, { ox: 4, oy: 2 });
+    if (has('armor')) { ctx.strokeStyle = 'rgba(107,255,143,0.9)'; ctx.lineWidth = 2; ctx.strokeRect(-18, -12, 30, 24); }
+    if (p.muzzle > 0) { p.muzzle -= 1 / 60; ctx.fillStyle = 'rgba(255,240,150,0.9)'; ctx.beginPath(); ctx.arc(14, 6, 5, 0, TAU); ctx.arc(12, 12, 5, 0, TAU); ctx.fill(); }
+    ctx.restore();
+    drawPlayerOverlays(p); return;
+  }
   // body
   ctx.fillStyle = '#c9d3e6'; ctx.strokeStyle = '#3a4560'; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(30, 0); ctx.lineTo(8, -7); ctx.lineTo(-24, -6); ctx.lineTo(-28, 0); ctx.lineTo(-24, 6); ctx.lineTo(8, 7); ctx.closePath(); ctx.fill(); ctx.stroke();
@@ -1502,6 +1529,9 @@ function drawPlayer() {
   if (has('armor')) { ctx.strokeStyle = '#6bff8f'; ctx.lineWidth = 2; ctx.strokeRect(-16, -9, 22, 18); }
   if (p.muzzle > 0) { p.muzzle -= 1 / 60; ctx.fillStyle = 'rgba(255,240,150,0.9)'; ctx.beginPath(); ctx.arc(24, -11, 5, 0, TAU); ctx.arc(24, 11, 5, 0, TAU); ctx.fill(); }
   ctx.restore();
+  drawPlayerOverlays(p);
+}
+function drawPlayerOverlays(p) {
   if (p.shieldUp) { ctx.strokeStyle = `rgba(93,168,255,${0.5 + 0.3 * Math.sin(G.time * 5)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p.x, p.y, 30, 0, TAU); ctx.stroke(); }
   if (p.dashT > 0) { ctx.strokeStyle = 'rgba(140,255,255,0.7)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(p.x, p.y, 26, 0, TAU); ctx.stroke(); }
   for (const d of G.drones) { ctx.fillStyle = '#5da8ff'; ctx.beginPath(); ctx.arc(d.x, d.y, 7, 0, TAU); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(d.x - 4, d.y - 1, 8, 2); ctx.fillRect(d.x - 1, d.y - 4, 2, 8); ctx.strokeStyle = 'rgba(93,168,255,0.4)'; ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(p.x, p.y); ctx.stroke(); }
