@@ -42,6 +42,11 @@ const SPR = (() => {
   const cache = {}, state = {};
   const FILES = { player: 'img/player.png', drone: 'img/drone.png', bomber: 'img/bomber.png', bomber_open: 'img/bomber_open.png', interceptor: 'img/interceptor.png', cannon: 'img/cannon.png', cannon_fire: 'img/cannon_fire.png', swarm: 'img/swarm.png', swarm_up: 'img/swarm_up.png', boss: 'img/boss_mothership.png', boss_armed: 'img/boss_armed.png', boss_damaged: 'img/boss_damaged.png', boss_prime: 'img/boss_prime.png', boss_prime_armed: 'img/boss_prime_armed.png', boss_prime_damaged: 'img/boss_prime_damaged.png', b_assault: 'img/b_assault.png', b_laser: 'img/b_laser.png', b_plasma: 'img/b_plasma.png', b_grenade: 'img/b_grenade.png', e_orange: 'img/e_orange.png', e_pink: 'img/e_pink.png', e_violet: 'img/e_violet.png', e_red: 'img/e_red.png', pk_health: 'img/pk_health.png', pk_laser: 'img/pk_laser.png', pk_plasma: 'img/pk_plasma.png', pk_grenade: 'img/pk_grenade.png', pk_rail: 'img/pk_rail.png', pk_beam: 'img/pk_beam.png', mine: 'img/mine.png', mine_on: 'img/mine_on.png', debris_a: 'img/debris_a.png', debris_b: 'img/debris_b.png', debris_c: 'img/debris_c.png', crate: 'img/crate.png' };
   for (const b of ['coastal', 'urban', 'mountain', 'desert', 'orbital']) for (const l of ['far', 'mid', 'near']) FILES['bg_' + b + '_' + l] = 'img/bg_' + b + '_' + l + '.png';
+  for (const id of ['rapid', 'multi', 'pierce', 'artillery', 'crit', 'explosive', 'nuke', 'autorepair', 'shield', 'weld', 'recovery', 'ablative', 'drone', 'cdr', 'hull', 'dash', 'threshold', 'heavy', 'momentum', 'armor', 'reactive', 'range', 'threat', 'lock', 'weakpoint', 'salvage', 'predict', 'uplink']) FILES['icon_' + id] = 'img/icon_' + id + '.png';
+  for (const id of ['dash', 'weld', 'drone', 'strike', 'nuke', 'shield', 'react']) FILES['ab_' + id] = 'img/ab_' + id + '.png';
+  for (const id of ['hull', 'aim', 'engine', 'kit', 'headstart', 'magnet', 'wind', 'arsenal_grenade', 'arsenal_rail', 'arsenal_beam']) FILES['hg_' + id] = 'img/hg_' + id + '.png';
+  // draw an icon fitted into a box (top-left x,y, size sz); returns true if drawn
+  function icon(id, x, y, sz) { const im = get(id); if (!im) return false; const s = Math.min(sz / im.width, sz / im.height); const w = im.width * s, h = im.height * s; ctx.drawImage(im, x + (sz - w) / 2, y + (sz - h) / 2, w, h); return true; }
   function get(id) {
     if (state[id] === 'ok') return cache[id];
     if (state[id] === undefined && FILES[id]) { state[id] = 'loading'; const im = new Image(); im.onload = () => { cache[id] = im; state[id] = 'ok'; }; im.onerror = () => { state[id] = 'missing'; }; im.src = FILES[id]; }
@@ -56,7 +61,7 @@ const SPR = (() => {
   function isOpaque(id) { const im = get(id); if (!im) return false; if (opaque[id] !== undefined) return opaque[id]; const c = document.createElement('canvas'); c.width = 4; c.height = 4; const x = c.getContext('2d'); x.drawImage(im, 0, 0, 4, 4, 0, 0, 4, 4); const d = x.getImageData(0, 0, 1, 1).data; opaque[id] = d[3] > 250 ? 'rgb(' + d[0] + ',' + d[1] + ',' + d[2] + ')' : false; return opaque[id]; }
   const bottoms = {};
   function bottomColor(id) { const im = get(id); if (!im) return null; if (bottoms[id] !== undefined) return bottoms[id]; const c = document.createElement('canvas'); c.width = 8; c.height = 1; const x = c.getContext('2d'); x.drawImage(im, 0, im.height - 2, im.width, 1, 0, 0, 8, 1); let r = 0, g = 0, b = 0, n = 0; const d = x.getImageData(0, 0, 8, 1).data; for (let i = 0; i < 8; i++) if (d[i * 4 + 3] > 200) { r += d[i * 4]; g += d[i * 4 + 1]; b += d[i * 4 + 2]; n++; } bottoms[id] = n >= 4 ? 'rgb(' + Math.round(r / n) + ',' + Math.round(g / n) + ',' + Math.round(b / n) + ')' : null; return bottoms[id]; }
-  return { get, draw, tile, isOpaque, bottomColor, FILES };
+  return { get, draw, tile, isOpaque, bottomColor, icon, FILES };
 })();
 
 // ---------------------------------------------------------------- utils
@@ -1754,7 +1759,7 @@ function drawHUD() {
   abil.push(['B', 'NUKE x' + (G.nukes || 0), (G.nukes || 0) > 0 ? 0 : 1, 1, '#ffe36b', 'EMPTY']);
   if (has('shield')) abil.push(['', 'SHIELD', p.shieldUp ? 0 : Math.max(p.shieldCd, 0.01), 30 * cdMult(), '#5da8ff']);
   if (has('reactive')) abil.push(['', 'REACT', p.reactiveCd, 300 * cdMult(), '#6bff8f']);
-  abil.forEach((a, i) => { const x = 290 + i * 74, y = H - 66; ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y, 66, 46); const f = a[2] > 0 ? clamp(1 - a[2] / a[3], 0, 1) : 1; ctx.fillStyle = a[2] > 0 ? '#333' : a[4]; ctx.fillRect(x + 4, y + 4, 58 * f, 30); ctx.fillStyle = '#fff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'; ctx.fillText(a[1], x + 33, y + 23); ctx.font = '10px monospace'; ctx.fillStyle = '#ccc'; ctx.fillText(a[2] > 0 ? (a[5] || Math.ceil(a[2]) + 's') : a[0] || 'READY', x + 33, y + 43); ctx.textAlign = 'left'; });
+  abil.forEach((a, i) => { const x = 290 + i * 74, y = H - 66; ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y, 66, 46); const f = a[2] > 0 ? clamp(1 - a[2] / a[3], 0, 1) : 1; ctx.fillStyle = a[2] > 0 ? '#333' : a[4]; ctx.fillRect(x + 4, y + 4, 58 * f, 30); const abId = { SPACE: 'ab_dash', F: 'ab_weld', R: 'ab_drone', G: 'ab_strike', B: 'ab_nuke' }[a[0]] || (a[1] === 'SHIELD' ? 'ab_shield' : a[1] === 'REACT' ? 'ab_react' : null); if (abId && SPR.get(abId)) { ctx.globalAlpha = a[2] > 0 ? 0.5 : 0.9; SPR.icon(abId, x + 4, y + 4, 30); ctx.globalAlpha = 1; } ctx.fillStyle = '#fff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'; ctx.fillText(a[1], x + (abId && SPR.get(abId) ? 42 : 33), y + 23); ctx.font = '10px monospace'; ctx.fillStyle = '#ccc'; ctx.fillText(a[2] > 0 ? (a[5] || Math.ceil(a[2]) + 's') : a[0] || 'READY', x + 33, y + 43); ctx.textAlign = 'left'; });
   // top center: level / wave / weather / time
   ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(W / 2 - 200, 12, 400, 44);
   ctx.fillStyle = '#fff'; ctx.font = 'bold 13px monospace';
@@ -1920,7 +1925,8 @@ function drawHangar() {
     const col = i % cols, row = Math.floor(i / cols); const x = x0 + col * (cw + 24), y = y0 + row * (ch + 8);
     const lvl = upg(u.id), maxed = lvl >= u.max, cost = maxed ? 0 : u.cost[lvl], can = !maxed && meta.scrap >= cost;
     ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(x, y, cw, ch); ctx.strokeStyle = maxed ? u.color : 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1.5; ctx.strokeRect(x, y, cw, ch);
-    text(u.name, x + 12, y + 20, u.color, 14, 'left', true); text(u.desc, x + 12, y + 40, '#cfd8ea', 11);
+    const hIcon = SPR.icon('hg_' + u.id, x + 10, y + 11, 36); const hx = hIcon ? x + 54 : x + 12;
+    text(u.name, hx, y + 20, u.color, 14, 'left', true); text(u.desc, hx, y + 40, '#cfd8ea', 11);
     for (let k = 0; k < u.max; k++) { ctx.fillStyle = k < lvl ? u.color : 'rgba(255,255,255,0.15)'; ctx.fillRect(x + 340 + k * 16, y + 12, 12, 8); }
     if (maxed) text('MAXED', x + cw - 60, y + 34, u.color, 12, 'center', true);
     else button(x + cw - 120, y + 12, 108, 34, '⚙ ' + cost, () => buyUpgrade(u.id), { color: can ? u.color : '#555', font: 'bold 13px', disabled: !can });
@@ -1967,8 +1973,10 @@ function drawTalents(fromLevelClear) {
       ctx.fillStyle = owned ? T.color : can ? (hover ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.08)') : 'rgba(0,0,0,0.35)';
       ctx.fillRect(x + 8, ty, colW - 16, 56);
       if (can) { ctx.strokeStyle = hover ? '#fff' : T.color; ctx.lineWidth = 1.5; ctx.strokeRect(x + 8, ty, colW - 16, 56); uiButtons.push({ x: x + 8, y: ty, w: colW - 16, h: 56, cb: () => buyTalent(tr, i) }); }
-      text((owned ? '✔ ' : '') + t.name + '  [' + t.cost + ']', x + 14, ty + 18, owned ? '#000' : prevOk ? '#fff' : '#777', 13, 'left', true);
-      wrapText(t.desc, x + 14, ty + 34, colW - 28, 12, owned ? '#111' : prevOk ? '#cfd8ea' : '#666', 10);
+      const hasIcon = !!SPR.get('icon_' + t.id); const tx = hasIcon ? x + 52 : x + 14;
+      if (hasIcon) { ctx.globalAlpha = prevOk || owned ? 1 : 0.35; SPR.icon('icon_' + t.id, x + 12, ty + 10, 34); ctx.globalAlpha = 1; }
+      text((owned ? '✔ ' : '') + t.name + '  [' + t.cost + ']', tx, ty + 18, owned ? '#000' : prevOk ? '#fff' : '#777', 13, 'left', true);
+      wrapText(t.desc, tx, ty + 34, colW - (tx - x) - 14, 12, owned ? '#111' : prevOk ? '#cfd8ea' : '#666', 10);
     });
     // unbounded passive investment once the tree is complete (no hard caps)
     const complete = T.talents.every(t => has(t.id));
