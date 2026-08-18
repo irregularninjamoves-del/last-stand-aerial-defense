@@ -351,7 +351,7 @@ const TREES = {
     { id: 'threat', name: 'Threat Analysis', cost: 1, desc: 'Enemy HP always shown; attack wind-up rings' },
     { id: 'lock', name: 'Target Lock', cost: 2, desc: 'All bullets gently steer toward the nearest target' },
     { id: 'weakpoint', name: 'Weak-Point Scanner', cost: 2, desc: 'Vulnerable windows: +50% bonus damage' },
-    { id: 'salvage', name: 'Salvage Beacon', cost: 3, desc: 'Double drop rate; pickup magnet range x2' },
+    { id: 'salvage', name: 'Salvage Beacon', cost: 3, desc: '+1 weapon powerup per level; ammo trickle; magnet x2' },
     { id: 'predict', name: 'Predictive Tracking', cost: 3, desc: 'Enemy shots show their path & fly 15% slower' },
     { id: 'uplink', name: 'Orbital Uplink', cost: 4, desc: '[G] Call an orbital strike column (90s CD)' },
   ]},
@@ -579,7 +579,7 @@ function startLevel(idx) {
   G.boss = null; G.waveIdx = -1; G.encounter = null; G.lull = 3; G.levelDone = false; G.wind = 0; G.gustTimer = 3;
   const p = P(); p.x = 260; p.y = H / 2; p.vx = p.vy = 0; p.dead = false; p.inv = 1;
   if (idx > 0) { p.hp = Math.max(p.hp, Math.round(p.maxHp * 0.6)); giveAmmoAll(0.5); }
-  G.plan = buildPlan(idx);
+  G.plan = buildPlan(idx); G.wpnBudget = irand(2, 3) + (has('salvage') ? 1 : 0); G.killsSinceDrop = 0;
   buildParallax(theme);
   buildAmbient(theme);
   Audio.ambience(G.weather.id === 'rain' ? 'rain' : G.weather.id === 'storm' ? 'storm' : G.weather.id === 'sand' ? 'sand' : 'none');
@@ -796,12 +796,28 @@ function killEnemy(e, reward) {
     addText(e.x, e.y - e.r - 6, '+' + e.xp + 'xp', '#b9c8ff');
     const roll = Math.random();
     const dm = has('salvage') ? 2 : 1;
-    if (e.elite) { if (roll < 1) dropPickup(e.x, e.y, 'health'); }
-    else if (has('salvage') && roll < 0.02 * dm) dropPickup(e.x, e.y, 'ammo'); // arcade: no random powerups from mobs (Salvage Beacon adds a trickle)
-    if (e.elite) { dropPickup(e.x + 20, e.y, 'ammo'); addXP(60); }
+    if (e.elite) { dropPickup(e.x, e.y, 'health'); tryWeaponDrop(e.x + 24, e.y - 10, true); addXP(60); }
+    else if (!tryWeaponDrop(e.x, e.y, false) && has('salvage') && roll < 0.02 * dm) dropPickup(e.x, e.y, 'ammo');
   }
 }
-function dropPickup(x, y, kind) { G.pickups.push({ x, y, kind, vx: -40, vy: rand(-30, 30), t: 14, bob: rand(TAU) }); }
+function dropPickup(x, y, kind, wid) { G.pickups.push({ x, y, kind, wid, vx: -40, vy: rand(-30, 30), t: kind === 'weapon' ? 16 : 14, bob: rand(TAU) }); }
+// weighted random weapon powerup; heavier weapons more common as levels climb, owned weapons slightly less likely
+function rollWeapon() {
+  const L = G.levelIdx, p = P();
+  const w = { laser: 30, plasma: 24, grenade: 16 + L * 2, rail: 10 + L * 2, beam: 8 + L * 2 };
+  for (const id in w) if (p.weapons[id]) w[id] *= 0.6;
+  let total = 0; for (const id in w) total += w[id];
+  let r = Math.random() * total; for (const id in w) { r -= w[id]; if (r <= 0) return id; }
+  return 'laser';
+}
+// per-level weapon budget: 2-3 random drops per level (Salvage Beacon +1), with a pity ramp so they don't clump
+function tryWeaponDrop(x, y, force) {
+  if (G.wpnBudget <= 0) return false;
+  G.killsSinceDrop = (G.killsSinceDrop || 0) + 1;
+  const chance = 0.0035 * (1 + G.killsSinceDrop / 40);
+  if (force || Math.random() < chance) { G.wpnBudget--; G.killsSinceDrop = 0; dropPickup(x, y, 'weapon', rollWeapon()); return true; }
+  return false;
+}
 
 // ---------------------------------------------------------------- BOSS
 function spawnBoss() {
@@ -864,7 +880,7 @@ function killBoss() {
   addText(b.x, b.y - 100, '+' + b.xp + ' XP', '#ffd36b', true);
   for (let i = 0; i < 12; i++) setTimeout(() => { if (G) { spawnExplosion(b.x + rand(-80, 80), b.y + rand(-50, 50), rand(30, 70), '#ff8844'); Audio.sfx.boom(); G.shake = 12; } }, i * 120);
   setTimeout(() => { if (G) { Audio.sfx.bigboom(); G.shake = 30; } }, 1400);
-  for (let i = 0; i < 3; i++) dropPickup(b.x - 100 + i * 40, b.y + rand(-40, 40), i === 0 ? 'health' : 'ammo');
+  dropPickup(b.x - 100, b.y, 'health'); dropPickup(b.x - 60, b.y - 20, 'weapon', rollWeapon()); dropPickup(b.x - 20, b.y + 20, 'ammo');
   G.ebullets = [];
   b.dying = 1.6;
   Music.play('level' + (G.levelIdx % 3));
@@ -904,12 +920,9 @@ function nextEncounter() {
   } else if (enc.type === 'boss') {
     spawnBoss();
   }
-  // Level 1 wave 2 unlock: laser cannons; later levels unlock more at wave 2 too
-  if (G.waveIdx === 1) {
-    const unlockAt = { 0: 'laser', 1: 'plasma', 2: 'grenade', 3: 'rail', 4: 'beam' };
-    if (unlockAt[L]) setTimeout(() => { if (G && !G.player.dead) giveWeapon(unlockAt[L]); }, 1500);
-    else if (L >= 5) giveAmmoAll(0.6);
-  }
+  // weapons are powerups now: a guaranteed one drifts in on wave 2 of the first level, then it's all drops
+  if (G.waveIdx === 1 && L === 0) G.pickups.push({ x: W + 30, y: rand(150, H - 150), kind: 'weapon', wid: rollWeapon(), vx: -90, vy: 0, t: 30, bob: rand(TAU) });
+  else if (G.waveIdx === 1 && L >= 1) giveAmmoAll(0.5);
 }
 function updateEncounter(dt) {
   const enc = G.encounter;
@@ -1173,6 +1186,7 @@ function updateWorld(dt) {
       k.t = 0; Audio.sfx.pickup(); spawnRing(k.x, k.y, '#fff', 30);
       if (k.kind === 'health') heal(p.maxHp * 0.25);
       else if (k.kind === 'ammo') { giveAmmoAll(0.35); addText(k.x, k.y - 20, '+AMMO', '#ffd36b'); }
+      else if (k.kind === 'weapon') { const had = !!p.weapons[k.wid]; giveWeapon(k.wid, true); if (had) addText(k.x, k.y - 20, WEAPONS[k.wid].name + ' +AMMO', WEAPONS[k.wid].color); else { banner(WEAPONS[k.wid].name, WEAPONS[k.wid].color, 'WEAPON POWERUP'); Audio.sfx.unlock(); } switchWeapon(k.wid, 0.15); spawnRing(k.x, k.y, WEAPONS[k.wid].color, 60); G.whiteFlash = Math.max(G.whiteFlash, 0.12); }
       else if (k.kind === 'crate') { const enc = G.encounter; if (enc && enc.type === 'collect') { enc.collected = (enc.collected || 0) + 1; addText(k.x, k.y - 20, 'CRATE ' + enc.collected + '/' + enc.cratesLeft, '#6bff8f'); } heal(p.maxHp * 0.08); giveAmmoAll(0.15); addXP(15); }
     }
   }
@@ -1421,6 +1435,7 @@ function drawProjectiles() {
     const y = k.y + Math.sin(k.bob) * 4;
     ctx.save(); ctx.translate(k.x, y);
     if (k.kind === 'health') { ctx.fillStyle = '#6bff8f'; ctx.fillRect(-10, -10, 20, 20); ctx.fillStyle = '#083'; ctx.fillRect(-7, -2, 14, 4); ctx.fillRect(-2, -7, 4, 14); }
+    else if (k.kind === 'weapon') { const c = WEAPONS[k.wid].color; const g = ctx.createRadialGradient(0, 0, 4, 0, 0, 30); g.addColorStop(0, c); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.globalAlpha = 0.35 + 0.2 * Math.sin(G.time * 6 + k.bob); ctx.fillStyle = g; ctx.fillRect(-30, -30, 60, 60); ctx.globalAlpha = 1; ctx.fillStyle = '#111'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-16, -11, 32, 22, 6) : ctx.rect(-16, -11, 32, 22); ctx.fill(); ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = c; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(k.wid === 'laser' ? 'L' : k.wid === 'grenade' ? 'G' : k.wid === 'rail' ? 'R' : k.wid === 'beam' ? 'B' : 'P', 0, 1); ctx.textBaseline = 'alphabetic'; }
     else if (k.kind === 'ammo') { ctx.fillStyle = '#ffd36b'; ctx.fillRect(-10, -8, 20, 16); ctx.fillStyle = '#640'; ctx.fillRect(-7, -5, 4, 10); ctx.fillRect(-2, -5, 4, 10); ctx.fillRect(3, -5, 4, 10); }
     else { ctx.fillStyle = '#c9a25c'; ctx.fillRect(-14, -12, 28, 24); ctx.strokeStyle = '#432'; ctx.lineWidth = 2; ctx.strokeRect(-14, -12, 28, 24); ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(14, 0); ctx.moveTo(0, -12); ctx.lineTo(0, 12); ctx.stroke(); ctx.strokeStyle = 'rgba(107,255,143,0.8)'; ctx.beginPath(); ctx.arc(0, 0, 22 + Math.sin(G.time * 4) * 3, 0, TAU); ctx.stroke(); ctx.fillStyle = '#ddd'; ctx.beginPath(); ctx.moveTo(-14, -12); ctx.lineTo(0, -34); ctx.lineTo(14, -12); ctx.closePath(); ctx.fill(); }
     ctx.restore();
@@ -1494,7 +1509,7 @@ function drawHUD() {
   if (has('range')) { ctx.strokeStyle = 'rgba(60,255,120,0.35)'; ctx.beginPath(); ctx.moveTo(rx + W / rspan * rw, ry); ctx.lineTo(rx + W / rspan * rw, ry + rh); ctx.stroke(); }
   for (const e of G.enemies) { ctx.fillStyle = e.elite ? '#ffd36b' : '#ff5d5d'; ctx.fillRect(rx + clamp(e.x, 0, rspan) / rspan * rw - 1.5, ry + e.y / H * rh - 1.5, 3, 3); if (has('range') && e.x > W + 10 && e.x < W * 1.6) { ctx.fillStyle = 'rgba(255,196,77,0.85)'; ctx.beginPath(); ctx.moveTo(W - 4, e.y); ctx.lineTo(W - 16, e.y - 6); ctx.lineTo(W - 16, e.y + 6); ctx.closePath(); ctx.fill(); } }
   if (G.boss) { ctx.fillStyle = '#ff3b3b'; ctx.fillRect(rx + clamp(G.boss.x, 0, rspan) / rspan * rw - 4, ry + G.boss.y / H * rh - 4, 8, 8); }
-  for (const k of G.pickups) { ctx.fillStyle = k.kind === 'health' ? '#6bff8f' : k.kind === 'crate' ? '#fff' : '#ffd36b'; ctx.fillRect(rx + clamp(k.x, 0, W) / W * rw - 1, ry + k.y / H * rh - 1, 2, 2); }
+  for (const k of G.pickups) { ctx.fillStyle = k.kind === 'health' ? '#6bff8f' : k.kind === 'crate' ? '#fff' : k.kind === 'weapon' ? WEAPONS[k.wid].color : '#ffd36b'; const sz = k.kind === 'weapon' ? 4 : 2; ctx.fillRect(rx + clamp(k.x, 0, W) / W * rw - sz / 2, ry + k.y / H * rh - sz / 2, sz, sz); }
   for (const d of G.debris) { ctx.fillStyle = '#aaa'; ctx.fillRect(rx + clamp(d.x, 0, W) / W * rw - 1, ry + clamp(d.y, 0, H) / H * rh - 1, 2, 2); }
   ctx.fillStyle = '#2f6'; ctx.font = '9px monospace'; ctx.textAlign = 'left'; ctx.fillText('RADAR', rx + 4, ry + 10);
   // score + combo
