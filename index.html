@@ -336,14 +336,17 @@ const Music = (() => {
   }
   function tick() { if (!cur || !Audio.ac) return; const ac = Audio.ac; const sps = 60 / cur.bpm / 4; while (nextT < ac.currentTime + 0.14) { scheduleStep(cur, step, nextT, sps); nextT += sps; step++; } }
   function stopSynth() { if (timer) { clearInterval(timer); timer = null; } cur = null; }
-  function stopFile() { if (el) { try { el.pause(); } catch (e) { } el = null; } }
+  let pendingEl = null;
+  function stopFile() { if (el) { try { el.pause(); el.src = ''; } catch (e) { } el = null; } if (pendingEl) { try { pendingEl.pause(); pendingEl.src = ''; } catch (e) { } pendingEl = null; } }
   function startSynth(name) { if (!ensure()) return; cur = TRACKS[name]; cur._lastF = 0; step = 0; nextT = Audio.ac.currentTime + 0.05; if (!timer) timer = setInterval(tick, 30); }
   function tryFile(name, onFail) {
     if (fileOk[name] === false) { if (onFail) onFail(); return; }
-    const a = document.createElement('audio'); a.src = FILES[name]; a.loop = true; a.volume = muted || !enabled ? 0 : vol;
+    if (pendingEl) { try { pendingEl.pause(); pendingEl.src = ''; } catch (e) { } pendingEl = null; }
+    const a = document.createElement('audio'); a.src = FILES[name]; a.loop = true; a.preload = 'auto'; a.volume = muted || !enabled ? 0 : vol;
+    pendingEl = a;
     let done = false;
-    a.addEventListener('canplay', () => { if (done) return; done = true; fileOk[name] = true; if (wantName !== name) return; stopSynth(); el = a; a.play().catch(() => { }); });
-    a.addEventListener('error', () => { if (done) return; done = true; fileOk[name] = false; if (wantName === name && onFail) onFail(); });
+    a.addEventListener('canplay', () => { if (done) return; done = true; fileOk[name] = true; if (pendingEl === a) pendingEl = null; if (wantName !== name || el) { try { a.pause(); a.src = ''; } catch (e) { } return; } stopSynth(); el = a; a.play().catch(() => { }); });
+    a.addEventListener('error', () => { if (done) return; done = true; fileOk[name] = false; if (pendingEl === a) pendingEl = null; if (wantName === name && onFail) onFail(); });
     a.load();
   }
   function play(name) {
@@ -355,11 +358,11 @@ const Music = (() => {
     else if (fileOk[name] === undefined) tryFile(name, () => startSynth(name));
     else startSynth(name);
   }
-  function poke() { if (curName && !cur && !el && Audio.ac) { const n = curName; curName = null; play(n); } }
+  function poke() { if (curName && !cur && !el && !pendingEl && Audio.ac) { const n = curName; curName = null; play(n); } }
   function targetVol() { return muted || !enabled ? 0 : vol; }
   function duck(sec) { if (!bus || !Audio.ac) return; const t = Audio.ac.currentTime; bus.gain.cancelScheduledValues(t); bus.gain.setValueAtTime(bus.gain.value, t); bus.gain.linearRampToValueAtTime(targetVol() * 0.35, t + 0.05); bus.gain.linearRampToValueAtTime(targetVol(), t + sec); if (el) { el.volume = targetVol() * 0.35; setTimeout(() => { if (el) el.volume = targetVol(); }, sec * 1000); } }
   function applyVol() { if (bus && Audio.ac) bus.gain.setTargetAtTime(targetVol(), Audio.ac.currentTime, 0.05); if (el) el.volume = targetVol(); }
-  return { play, poke, duck, TRACKS, get name() { return curName; }, get enabled() { return enabled; }, setMuted(m) { muted = m; applyVol(); }, toggle() { enabled = !enabled; applyVol(); return enabled; } };
+  return { play, poke, duck, TRACKS, get name() { return curName; }, get enabled() { return enabled; }, info() { return { name: curName, file: !!el, synth: !!cur, playing: el ? !el.paused : !!cur, src: el ? el.src.split('/').pop() : null, t: el ? Math.round(el.currentTime) : null, ready: el ? el.readyState : null }; }, setMuted(m) { muted = m; applyVol(); }, toggle() { enabled = !enabled; applyVol(); return enabled; } };
 })();
 
 // ============================================================================
@@ -1652,7 +1655,7 @@ function fireNuke() {
   G.hitStop = 0.03; G.whiteFlash = 1.4; G.shake = 40; G.zoomPunch = 2.2;
   Music.duck(3);
   Audio.sfx.nuke();
-  for (let i = 0; i < 260; i++) { const a = rand(TAU), sp = rand(200, 1400); G.nuke.sparks.push({ x: G.nuke.x, y: G.nuke.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: rand(0.6, 1.6), c: pick(['#fff', '#ffe36b', '#ffb066', '#ff7a3d']) }); }
+  for (let i = 0; i < 160; i++) { const a = rand(TAU), sp = rand(200, 1400); G.nuke.sparks.push({ x: G.nuke.x, y: G.nuke.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: rand(0.6, 1.6), c: pick(['#fff', '#ffe36b', '#ffb066', '#ff7a3d']) }); }
   for (let i = 0; i < 9; i++) G.nuke.plumes.push({ a: -Math.PI / 2 + rand(-0.9, 0.9), r: 0, s: rand(0.7, 1.3), ph: rand(TAU) });
   addText(p.x, p.y - 60, 'TACTICAL NUKE', '#ffe36b', true);
 }
@@ -1701,8 +1704,9 @@ function drawNuke() {
     ctx.strokeStyle = `rgba(255,120,60,${0.4 * a})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(n.x, n.y, n.r * 0.82, 0, TAU); ctx.stroke();
     // refraction band: horizontal slice displacement just behind the wave
     ctx.globalCompositeOperation = 'source-over';
-    const band = 60; const y0 = clamp(n.y - n.r, 0, H), y1 = clamp(n.y + n.r, 0, H);
-    for (let y = Math.floor(y0 / 6) * 6; y < y1; y += 6) { const dy = y - n.y; const half = Math.sqrt(Math.max(0, n.r * n.r - dy * dy)); const off = Math.sin(y * 0.15 + t * 40) * 10 * a; ctx.drawImage(canvas, clamp(n.x - half - band, 0, W), y, band, 6, clamp(n.x - half - band, 0, W) + off, y, band, 6); ctx.drawImage(canvas, clamp(n.x + half, 0, W - band), y, band, 6, clamp(n.x + half, 0, W - band) - off, y, band, 6); }
+    // refraction: a handful of tall slices (canvas self-copies are expensive — keep the count tiny)
+    if (n.r < 1000) { const band = 60, step = 36; const y0 = clamp(n.y - n.r, 0, H), y1 = clamp(n.y + n.r, 0, H);
+      for (let y = Math.floor(y0 / step) * step; y < y1; y += step) { const dy = y + step / 2 - n.y; const half = Math.sqrt(Math.max(0, n.r * n.r - dy * dy)); const off = Math.sin(y * 0.15 + t * 40) * 10 * a; const xl = clamp(n.x - half - band, 0, W - band), xr = clamp(n.x + half, 0, W - band); if (xl > 0) ctx.drawImage(canvas, xl, y, band, step, xl + off, y, band, step); if (xr < W - band) ctx.drawImage(canvas, xr, y, band, step, xr - off, y, band, step); } }
   }
   // sparks
   ctx.globalCompositeOperation = 'lighter';
