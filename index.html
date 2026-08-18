@@ -40,7 +40,7 @@ window.addEventListener('resize', fitCanvas); fitCanvas();
 // Put PNGs in img/ (authored at 2x). SPR.get('player') returns an Image once loaded, else null -> caller draws vector.
 const SPR = (() => {
   const cache = {}, state = {};
-  const FILES = { player: 'img/player.png', drone: 'img/drone.png', bomber: 'img/bomber.png', bomber_open: 'img/bomber_open.png', interceptor: 'img/interceptor.png', cannon: 'img/cannon.png', swarm: 'img/swarm.png', boss: 'img/boss_mothership.png', boss_prime: 'img/boss_prime.png' };
+  const FILES = { player: 'img/player.png', drone: 'img/drone.png', bomber: 'img/bomber.png', bomber_open: 'img/bomber_open.png', interceptor: 'img/interceptor.png', cannon: 'img/cannon.png', cannon_fire: 'img/cannon_fire.png', swarm: 'img/swarm.png', boss: 'img/boss_mothership.png', boss_prime: 'img/boss_prime.png' };
   function get(id) {
     if (state[id] === 'ok') return cache[id];
     if (state[id] === undefined && FILES[id]) { state[id] = 'loading'; const im = new Image(); im.onload = () => { cache[id] = im; state[id] = 'ok'; }; im.onerror = () => { state[id] = 'missing'; }; im.src = FILES[id]; }
@@ -1461,11 +1461,12 @@ function drawEnemy(e) {
   const SPR_H = { drone: 26, bomber: 46, interceptor: 30, cannon: 56, swarm: 13 };
   if (SPR.get(e.type)) {
     if (e.flash > 0) ctx.filter = 'brightness(2.6) saturate(0.3)';
-    const useOpen = e.type === 'bomber' && e.tele > 0 && SPR.get('bomber_open');
-    SPR.draw(useOpen ? 'bomber_open' : e.type, SPR_H[e.type] * (e.elite ? 1.5 : 1));
+    // telegraph frames: bomber open bay / cannon firing (barrel recoiled, red core); cannon also shows 'fire' frame briefly after the salvo
+    const alt = e.type === 'bomber' && e.tele > 0 && SPR.get('bomber_open') ? 'bomber_open' : e.type === 'cannon' && (e.tele > 0 || e.flash > 0) && SPR.get('cannon_fire') ? 'cannon_fire' : null;
+    SPR.draw(alt || e.type, SPR_H[e.type] * (e.elite ? 1.5 : 1), e.type === 'cannon' ? { ox: -r * 0.55 } : {});
     ctx.filter = 'none';
-    if (e.type === 'bomber' && e.tele > 0 && !useOpen) { ctx.fillStyle = 'rgba(255,60,40,0.85)'; ctx.fillRect(-r * 0.3, r * 0.35, r * 0.6, r * 0.3); }
-    if (e.type === 'cannon' && e.tele > 0) { ctx.fillStyle = 'rgba(255,60,40,0.85)'; ctx.beginPath(); ctx.arc(0, 0, r * 0.35, 0, TAU); ctx.fill(); }
+    if (e.type === 'bomber' && e.tele > 0 && !alt) { ctx.fillStyle = 'rgba(255,60,40,0.85)'; ctx.fillRect(-r * 0.3, r * 0.35, r * 0.6, r * 0.3); }
+    if (e.type === 'cannon' && e.tele > 0 && !alt) { ctx.fillStyle = 'rgba(255,60,40,0.85)'; ctx.beginPath(); ctx.arc(0, 0, r * 0.35, 0, TAU); ctx.fill(); }
   }
   else if (e.type === 'drone') { ctx.beginPath(); ctx.moveTo(-r, 0); ctx.lineTo(r * 0.3, -r * 0.7); ctx.lineTo(r, 0); ctx.lineTo(r * 0.3, r * 0.7); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#300'; ctx.fillRect(-r * 0.4, -3, 6, 6); }
   else if (e.type === 'bomber') { ctx.beginPath(); ctx.ellipse(0, 0, r * 1.2, r * 0.6, 0, 0, TAU); ctx.fill(); ctx.stroke(); ctx.fillRect(-r * 0.4, -r * 1.1, r * 0.8, r * 2.2); ctx.fillStyle = e.tele > 0 ? '#ff3030' : '#442'; ctx.fillRect(-r * 0.3, r * 0.3, r * 0.6, r * 0.35); }
