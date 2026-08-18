@@ -511,7 +511,7 @@ function endRunBookkeeping() {
 
 function newRun(daily) {
   G = {
-    daily: daily ? todayKey() : null, paid: false, scrapEarned: 0, windUsed: false,
+    daily: daily ? todayKey() : null, paid: false, scrapEarned: 0, windUsed: false, stagePts: 0, stageGain: 0,
     time: 0, scroll: 0, levelIdx: 0, weather: null, rng: Math.random,
     player: null, enemies: [], bullets: [], ebullets: [], mines: [], pickups: [], parts: [], texts: [], hazards: [], debris: [], zones: [], fx: [],
     birds: [], plumes: [], wrecks: [], flashes: [], lightning: [], drones: [],
@@ -612,17 +612,18 @@ function killPlayer() {
 
 // XP
 const xpNeeded = lvl => 400 + 90 * lvl;
-const POINT_EVERY = 3; // 1 stat point every 3 player levels
+// Stat points come from STAGE progress: all 64 (four full trees) land at ~level 950. points(S) = round(64 * (S/950)^0.6)
+const TOTAL_TALENT_POINTS = 64;
+const pointsByStage = S => Math.min(TOTAL_TALENT_POINTS, Math.round(TOTAL_TALENT_POINTS * Math.pow(Math.max(0, S) / 950, 0.6)));
+function nextPointStage(S) { const cur = pointsByStage(S); for (let k = S + 1; k <= 1000; k++) if (pointsByStage(k) > cur) return k; return null; }
 function addXP(n) {
   if (G.player.dead) return;
   n *= 1 + 0.02 * G.invested.radar;
   G.xp += n;
   while (G.xp >= xpNeeded(G.level)) {
     G.xp -= xpNeeded(G.level); G.level++;
-    const gotPoint = G.level % POINT_EVERY === 0;
-    if (gotPoint) G.points += 1;
     Audio.sfx.levelup();
-    banner('LEVEL ' + G.level, '#ffd36b', gotPoint ? '+1 STAT POINT — press T to allocate' : 'Next stat point at level ' + (Math.ceil(G.level / POINT_EVERY) * POINT_EVERY));
+    banner('LEVEL ' + G.level, '#ffd36b', '+10% hull  •  stat points come from clearing levels');
     spawnRing(P().x, P().y, '#ffd36b', 120); hitStop(0.12); G.whiteFlash = 0.25; G.zoomPunch = 1;
     heal(P().maxHp * 0.1);
   }
@@ -1062,6 +1063,7 @@ function updateEncounter(dt) {
   if (complete) { G.encounter = null; G.lull = 3.5; if (G.levelDone) { setTimeout(() => { if (G) finishLevel(); }, 1500); } }
 }
 function finishLevel() {
+  { const target = pointsByStage(G.levelIdx + 1); const gain = target - (G.stagePts || 0); if (gain > 0) { G.points += gain; G.stagePts = target; G.stageGain = gain; } else G.stageGain = 0; }
   meta.bestLevel = Math.max(meta.bestLevel, G.levelIdx + 1); meta.bestCombo = Math.max(meta.bestCombo, G.stats.bestCombo); meta.bestScore = Math.max(meta.bestScore, G.score); saveMeta(); checkMissions();
   meta.bestLevel = Math.max(meta.bestLevel, G.levelIdx + 1); saveMeta();
   if (G.levelIdx >= MAX_LEVELS - 1) { meta.wins++; saveMeta(); screen = 'victory'; }
@@ -1670,8 +1672,8 @@ function drawHUD() {
   ctx.fillStyle = '#fff'; ctx.font = 'bold 12px monospace'; ctx.fillText('HULL ' + Math.ceil(p.hp) + '/' + p.maxHp, 28, 36);
   // XP
   ctx.fillStyle = '#222'; ctx.fillRect(24, 46, 284, 8); ctx.fillStyle = '#b9c8ff'; ctx.fillRect(24, 46, 284 * (G.xp / xpNeeded(G.level)), 8);
-  const nextPt = Math.ceil((G.level + 1) / POINT_EVERY) * POINT_EVERY;
-  const xpLine = 'LVL ' + G.level + '   XP ' + Math.floor(G.xp) + '/' + xpNeeded(G.level) + '   pt@' + nextPt;
+  const nps = nextPointStage(G.levelIdx); const nextPt = nps ? 'pt@L' + nps : 'maxed';
+  const xpLine = 'LVL ' + G.level + '   XP ' + Math.floor(G.xp) + '/' + xpNeeded(G.level) + '   ' + nextPt;
   ctx.fillStyle = '#dfe7f5'; ctx.font = '11px monospace'; ctx.fillText(xpLine + (G.points > 0 ? '   ★ ' + G.points + ' pts [T]' : ''), 26, 70);
   if (G.points > 0 && Math.floor(G.time * 2) % 2 === 0) { ctx.fillStyle = '#ffd36b'; ctx.fillText('★ ' + G.points + ' pts [T]', 26 + ctx.measureText(xpLine + '   ').width, 70); }
   // weapon panel
@@ -1891,7 +1893,7 @@ function drawRecords() {
 }
 function drawTalents(fromLevelClear) {
   overlay(0.86);
-  title(fromLevelClear ? 'LEVEL ' + (G.levelIdx + 1) + ' CLEAR' : 'TALENTS', 50, '#ffd36b', 36);
+  title(fromLevelClear ? 'LEVEL ' + (G.levelIdx + 1) + ' CLEAR' + (G.stageGain ? '   +' + G.stageGain + ' STAT POINT' + (G.stageGain > 1 ? 'S' : '') : '') : 'TALENTS', 50, '#ffd36b', 36);
   text('STAT POINTS: ' + G.points + '     Player level ' + G.level + '     ' + (fromLevelClear ? 'Redistribute or spend before deploying' : 'Buy in order (top → bottom). Costs shown in brackets.'), W / 2, 84, '#fff', 15, 'center', true);
   const colW = 302, gap = 14, x0 = (W - colW * 4 - gap * 3) / 2;
   TREE_ORDER.forEach((tr, ti) => {
