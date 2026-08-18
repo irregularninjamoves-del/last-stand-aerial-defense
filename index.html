@@ -413,11 +413,64 @@ const scrollSpeedFor = L => Math.min(280, 130 + L * 8);
 let G = null;               // run state
 let screen = 'menu';        // menu | play | talents | pause | levelclear | gameover | victory
 let uiButtons = [];         // clickable rects for current UI screen
-const meta = Object.assign({ best: 0, bestLevel: 0, runs: 0, wins: 0, bestScore: 0, bestCombo: 0 }, JSON.parse(localStorage.getItem('laststand_meta') || '{}'));
+const meta = Object.assign({ best: 0, bestLevel: 0, runs: 0, wins: 0, bestScore: 0, bestCombo: 0, scrap: 0, scrapEarned: 0, upg: {}, ach: {}, totals: { kills: 0, bosses: 0, elites: 0, levels: 0, weapons: {} }, daily: { date: '', best: 0, runs: 0 }, history: [] }, JSON.parse(localStorage.getItem('laststand_meta') || '{}'));
+meta.upg = Object.assign({ hull: 0, aim: 0, engine: 0, kit: 0, headstart: 0, magnet: 0, wind: 0, arsenal_grenade: 0, arsenal_rail: 0, arsenal_beam: 0 }, meta.upg || {});
+meta.totals = Object.assign({ kills: 0, bosses: 0, elites: 0, levels: 0, weapons: {} }, meta.totals || {});
 function saveMeta() { localStorage.setItem('laststand_meta', JSON.stringify(meta)); }
+// ---- Hangar: permanent upgrades bought with SCRAP
+const HANGAR = [
+  { id: 'hull', name: 'Reinforced Airframe', max: 5, cost: [150, 260, 400, 600, 850], desc: '+6% max HP per rank', color: '#6bff8f' },
+  { id: 'aim', name: 'Targeting Computer', max: 5, cost: [150, 260, 400, 600, 850], desc: '+5% damage per rank', color: '#ff5d5d' },
+  { id: 'engine', name: 'Engine Tuning', max: 3, cost: [200, 400, 700], desc: '+5% speed per rank', color: '#7df9ff' },
+  { id: 'kit', name: 'Field Kit', max: 3, cost: [300, 600, 1000], desc: 'Start each run with +1 stat point per rank', color: '#ffd36b' },
+  { id: 'headstart', name: 'Head Start', max: 1, cost: [350], desc: 'Begin every run holding a random weapon powerup', color: '#d19bff' },
+  { id: 'magnet', name: 'Scrap Magnet', max: 3, cost: [250, 500, 900], desc: '+15% scrap earned per rank', color: '#ffc44d' },
+  { id: 'wind', name: 'Second Wind', max: 1, cost: [900], desc: 'Once per run: survive a lethal hit and revive at 40% HP', color: '#5da8ff' },
+  { id: 'arsenal_grenade', name: 'Arsenal: Grenade Launcher', max: 1, cost: [400], desc: 'Grenade Launcher can now drop as a powerup', color: '#9dff6b' },
+  { id: 'arsenal_rail', name: 'Arsenal: Rail Gun', max: 1, cost: [700], desc: 'Rail Gun can now drop as a powerup', color: '#d19bff' },
+  { id: 'arsenal_beam', name: 'Arsenal: Beam Cannon', max: 1, cost: [1000], desc: 'Beam Cannon can now drop as a powerup', color: '#ff8adf' },
+];
+const upg = id => meta.upg[id] || 0;
+function buyUpgrade(id) { const u = HANGAR.find(u => u.id === id); const lvl = upg(id); if (lvl >= u.max) return false; const c = u.cost[lvl]; if (meta.scrap < c) return false; meta.scrap -= c; meta.upg[id] = lvl + 1; saveMeta(); Audio.sfx.unlock(); return true; }
+// ---- Missions: permanent goals with scrap rewards
+const MISSIONS = [
+  { id: 'kills100', name: 'First Blood', desc: 'Destroy 100 enemies (total)', reward: 100, prog: () => meta.totals.kills, goal: 100 },
+  { id: 'boss1', name: 'Mothership Down', desc: 'Destroy a Mothership', reward: 150, prog: () => meta.totals.bosses, goal: 1 },
+  { id: 'combo50', name: 'Chain Reaction', desc: 'Reach a x50 combo', reward: 150, prog: () => meta.bestCombo, goal: 50 },
+  { id: 'level3', name: 'Push Inland', desc: 'Reach Level 3', reward: 150, prog: () => meta.bestLevel, goal: 3 },
+  { id: 'kills2k', name: 'Ace', desc: 'Destroy 2,000 enemies (total)', reward: 250, prog: () => meta.totals.kills, goal: 2000 },
+  { id: 'weapons3', name: 'Quartermaster', desc: 'Use 3 different weapon powerups', reward: 200, prog: () => Object.keys(meta.totals.weapons).length, goal: 3 },
+  { id: 'score10k', name: 'High Roller', desc: 'Score 10,000 in one run', reward: 250, prog: () => meta.bestScore, goal: 10000 },
+  { id: 'level6', name: 'Deep Strike', desc: 'Reach Level 6', reward: 350, prog: () => meta.bestLevel, goal: 6 },
+  { id: 'combo150', name: 'Untouchable', desc: 'Reach a x150 combo', reward: 300, prog: () => meta.bestCombo, goal: 150 },
+  { id: 'bosses5', name: 'Fleet Breaker', desc: 'Destroy 5 Motherships (total)', reward: 400, prog: () => meta.totals.bosses, goal: 5 },
+  { id: 'kills10k', name: 'Legend', desc: 'Destroy 10,000 enemies (total)', reward: 500, prog: () => meta.totals.kills, goal: 10000 },
+  { id: 'level10', name: 'The Long War', desc: 'Reach Level 10', reward: 600, prog: () => meta.bestLevel, goal: 10 },
+  { id: 'score50k', name: 'Arcade God', desc: 'Score 50,000 in one run', reward: 600, prog: () => meta.bestScore, goal: 50000 },
+];
+const missionToasts = [];
+function checkMissions() {
+  for (const m of MISSIONS) if (!meta.ach[m.id] && m.prog() >= m.goal) { meta.ach[m.id] = true; meta.scrap += m.reward; meta.scrapEarned += m.reward; missionToasts.push({ m, t: 4 }); Audio.sfx.milestone(); }
+  saveMeta();
+}
+// ---- Daily seed
+const todayKey = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+function strHash(str) { let h = 2166136261 >>> 0; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h; }
+// ---- Scrap payout at run end
+function scrapForRun() { const base = Math.round(G.score / 40 + (G.levelIdx + 1) * 40 + G.stats.bossKills * 120 + G.stats.kills * 0.05); return Math.round(base * (1 + 0.15 * upg('magnet'))); }
+function endRunBookkeeping() {
+  if (G.paid) return; G.paid = true;
+  const earned = scrapForRun(); G.scrapEarned = earned; meta.scrap += earned; meta.scrapEarned += earned;
+  meta.totals.levels += G.levelIdx;
+  meta.best = Math.max(meta.best, G.stats.kills); meta.bestLevel = Math.max(meta.bestLevel, G.levelIdx + 1); meta.bestScore = Math.max(meta.bestScore, G.score); meta.bestCombo = Math.max(meta.bestCombo, G.stats.bestCombo);
+  if (G.daily) { if (meta.daily.date !== G.daily) meta.daily = { date: G.daily, best: 0, runs: 0 }; meta.daily.runs++; G.dailyBest = G.score > meta.daily.best; meta.daily.best = Math.max(meta.daily.best, G.score); }
+  meta.history.unshift({ score: G.score, level: G.levelIdx + 1, kills: G.stats.kills, time: Math.round(G.time), daily: !!G.daily }); meta.history = meta.history.slice(0, 10);
+  saveMeta(); checkMissions();
+}
 
-function newRun() {
+function newRun(daily) {
   G = {
+    daily: daily ? todayKey() : null, paid: false, scrapEarned: 0, windUsed: false,
     time: 0, scroll: 0, levelIdx: 0, weather: null, rng: Math.random,
     player: null, enemies: [], bullets: [], ebullets: [], mines: [], pickups: [], parts: [], texts: [], hazards: [], debris: [], zones: [], fx: [],
     birds: [], plumes: [], wrecks: [], flashes: [], lightning: [], drones: [],
@@ -429,8 +482,11 @@ function newRun() {
     lull: 0, levelDone: false, cloudCover: 0, radarBlips: [],
   };
   G.player = makePlayer();
+  G.points += upg('kit');
+  recalcPlayer(); G.player.hp = G.player.maxHp;
   meta.runs++; saveMeta();
   startLevel(0);
+  if (upg('headstart')) giveWeapon(rollWeapon(), true);
 }
 
 function makePlayer() {
@@ -450,11 +506,13 @@ function recalcPlayer() {
   const p = P();
   const oldMax = p.maxHp;
   let m = 100 * (1 + 0.02 * G.invested.durability);
+  // (hangar hull bonus applied after talents below)
   if (has('hull')) m *= 1.25;
   if (has('armor')) m *= 1.3;
   p.maxHp = Math.round(m);
   if (oldMax > 0) p.hp = clamp(p.hp * p.maxHp / oldMax, 1, p.maxHp);
-  p.speedMult = has('armor') ? 0.9 : 1;
+  p.maxHp = Math.round(p.maxHp * (1 + 0.06 * upg('hull')));
+  p.speedMult = (has('armor') ? 0.9 : 1) * (1 + 0.05 * upg('engine'));
 }
 const powerupDur = id => WEAPONS[id].dur * (has('artillery') ? 1.5 : 1) * (has('swap') ? 1.25 : 1);
 // Timed powerup: you carry Assault Rifles + at most one powerup weapon. Grabbing the same one refreshes the timer.
@@ -465,6 +523,7 @@ function giveWeapon(id, silent) {
   if (p.pw === id) { p.pwT = Math.max(p.pwT, dur); p.pwMax = Math.max(p.pwMax, dur); if (!silent) addText(p.x, p.y - 30, WEAPONS[id].name + ' EXTENDED', WEAPONS[id].color); }
   else { p.pw = id; p.pwT = dur; p.pwMax = dur; if (!silent) { banner(WEAPONS[id].name, WEAPONS[id].color, 'WEAPON POWERUP — ' + Math.round(dur) + 's'); Audio.sfx.unlock(); } }
   if (G.unlockedWeapons.indexOf(id) < 0) G.unlockedWeapons.push(id);
+  if (!meta.totals.weapons[id]) { meta.totals.weapons[id] = 1; saveMeta(); }
   switchWeapon(id, 0.15);
 }
 function heal(amt, src) {
@@ -498,13 +557,16 @@ function damagePlayer(raw, src) {
   Audio.sfx.hurt();
   spawnParts(p.x, p.y, 8, '#ff9955', 160);
   p.inv = 0.35;
-  if (p.hp <= 0) { p.hp = 0; killPlayer(); }
+  if (p.hp <= 0) {
+    if (upg('wind') && !G.windUsed) { G.windUsed = true; p.hp = Math.round(p.maxHp * 0.4); p.inv = 3; G.ebullets = []; G.mines = []; hitStop(0.4); G.whiteFlash = 0.8; G.shake = 20; spawnRing(p.x, p.y, '#5da8ff', 220); banner('SECOND WIND', '#5da8ff', 'Airframe restored — 3s invulnerable'); Audio.sfx.levelup(); return; }
+    p.hp = 0; killPlayer();
+  }
 }
 function killPlayer() {
   const p = P(); p.dead = true;
   spawnExplosion(p.x, p.y, 70, '#ff8844'); Audio.sfx.bigboom();
   G.shake = 30;
-  setTimeout(() => { if (G && G.player.dead) { meta.best = Math.max(meta.best, G.stats.kills); meta.bestLevel = Math.max(meta.bestLevel, G.levelIdx + 1); meta.bestScore = Math.max(meta.bestScore, G.score); meta.bestCombo = Math.max(meta.bestCombo, G.stats.bestCombo); saveMeta(); screen = 'gameover'; } }, 1800);
+  setTimeout(() => { if (G && G.player.dead) { endRunBookkeeping(); screen = 'gameover'; } }, 1800);
 }
 
 // XP
@@ -576,7 +638,7 @@ function pickWeather(theme) {
 function startLevel(idx) {
   G.levelIdx = idx;
   const theme = themeFor(idx);
-  const seed = (Date.now() ^ (idx * 7919)) >>> 0;
+  const seed = G.daily ? (strHash(G.daily + ':' + idx)) : ((Date.now() ^ (idx * 7919)) >>> 0);
   G.rng = mulberry(seed);
   G.weather = pickWeather(theme);
   G.enemies = []; G.bullets = []; G.ebullets = []; G.mines = []; G.pickups = []; G.hazards = []; G.debris = []; G.zones = []; G.lightning = []; G.drones = [];
@@ -781,7 +843,7 @@ function damageEnemy(e, dmg, x, y, silent) {
   if (e.vuln > 0) dmg *= (e.isBoss ? 1.25 : 1.5) + (has('weakpoint') ? 0.5 : 0);
   let crit = false;
   if (has('crit') && Math.random() < 0.15) { dmg *= 2; crit = true; }
-  dmg *= 1 + 0.03 * G.invested.assault;
+  dmg *= (1 + 0.03 * G.invested.assault) * (1 + 0.05 * upg('aim'));
   e.hp -= dmg; e.flash = 0.06; G.stats.damage += dmg;
   if (!silent) addText(x + rand(-6, 6), y - 10, Math.round(dmg) + (crit ? '!' : ''), crit ? '#ffd36b' : '#fff', crit);
   spawnParts(x, y, 3, e.color || '#ffaa88', 120, 0.35);
@@ -795,12 +857,12 @@ function killEnemy(e, reward) {
   if (e.isBoss) { return; }
   spawnExplosion(e.x, e.y, e.r * 2, e.color); Audio.sfx.boom();
   if (reward) {
-    G.stats.kills++; registerKill(e); addXP(Math.round(e.xp * comboMult()));
+    G.stats.kills++; meta.totals.kills++; registerKill(e); addXP(Math.round(e.xp * comboMult()));
     if (e.elite) { hitStop(0.12); G.whiteFlash = 0.2; G.zoomPunch = 1; }
     addText(e.x, e.y - e.r - 6, '+' + e.xp + 'xp', '#b9c8ff');
     const roll = Math.random();
     const dm = has('salvage') ? 2 : 1;
-    if (e.elite) { dropPickup(e.x, e.y, 'health'); tryWeaponDrop(e.x + 24, e.y - 10, true); addXP(60); }
+    if (e.elite) { dropPickup(e.x, e.y, 'health'); tryWeaponDrop(e.x + 24, e.y - 10, true); addXP(60); meta.totals.elites++; }
     else if (!tryWeaponDrop(e.x, e.y, false) && has('salvage') && roll < 0.004) dropPickup(e.x, e.y, 'health');
   }
 }
@@ -808,9 +870,10 @@ function dropPickup(x, y, kind, wid) { if (kind === 'ammo') kind = 'health'; G.p
 // weighted random weapon powerup; heavier weapons more common as levels climb, owned weapons slightly less likely
 function rollWeapon() {
   const L = G.levelIdx, p = P();
-  const w = { laser: 30, plasma: 24, grenade: 16 + L * 2, rail: 10 + L * 2, beam: 8 + L * 2 };
+  const w = { laser: 30, plasma: 24 };
+  if (upg('arsenal_grenade')) w.grenade = 16 + L * 2; if (upg('arsenal_rail')) w.rail = 10 + L * 2; if (upg('arsenal_beam')) w.beam = 8 + L * 2;
   if (p.pw && w[p.pw]) w[p.pw] *= 0.5;
-  if (has('artillery')) { w.grenade *= 2; w.rail *= 2; w.beam *= 2; }
+  if (has('artillery')) for (const id of ['grenade', 'rail', 'beam']) if (w[id]) w[id] *= 2;
   let total = 0; for (const id in w) total += w[id];
   let r = Math.random() * total; for (const id in w) { r -= w[id]; if (r <= 0) return id; }
   return 'laser';
@@ -881,7 +944,7 @@ function updateBoss(b, dt) {
 }
 function killBoss() {
   const b = G.boss;
-  G.stats.bossKills++; G.stats.kills++; registerKill(b); addXP(b.xp); hitStop(0.35); G.whiteFlash = 0.5; G.zoomPunch = 1.5;
+  G.stats.bossKills++; G.stats.kills++; meta.totals.kills++; meta.totals.bosses++; registerKill(b); addXP(b.xp); hitStop(0.35); G.whiteFlash = 0.5; G.zoomPunch = 1.5;
   addText(b.x, b.y - 100, '+' + b.xp + ' XP', '#ffd36b', true);
   for (let i = 0; i < 12; i++) setTimeout(() => { if (G) { spawnExplosion(b.x + rand(-80, 80), b.y + rand(-50, 50), rand(30, 70), '#ff8844'); Audio.sfx.boom(); G.shake = 12; } }, i * 120);
   setTimeout(() => { if (G) { Audio.sfx.bigboom(); G.shake = 30; } }, 1400);
@@ -956,6 +1019,7 @@ function updateEncounter(dt) {
   if (complete) { G.encounter = null; G.lull = 3.5; if (G.levelDone) { setTimeout(() => { if (G) finishLevel(); }, 1500); } }
 }
 function finishLevel() {
+  meta.bestLevel = Math.max(meta.bestLevel, G.levelIdx + 1); meta.bestCombo = Math.max(meta.bestCombo, G.stats.bestCombo); meta.bestScore = Math.max(meta.bestScore, G.score); saveMeta(); checkMissions();
   meta.bestLevel = Math.max(meta.bestLevel, G.levelIdx + 1); saveMeta();
   if (G.levelIdx >= MAX_LEVELS - 1) { meta.wins++; saveMeta(); screen = 'victory'; }
   else { screen = 'levelclear'; }
@@ -1117,6 +1181,7 @@ function updateWorld(dt) {
   if (G.hitStop > 0) { G.hitStop -= dt; G.shake = Math.max(0, G.shake - dt * 30); return; }
   if (G.combo > 0) { G.comboT -= dt; if (G.comboT <= 0) breakCombo(); }
   G.time += dt;
+  G.missionT = (G.missionT || 0) + dt; if (G.missionT > 5) { G.missionT = 0; meta.bestCombo = Math.max(meta.bestCombo, G.stats.bestCombo); meta.bestScore = Math.max(meta.bestScore, G.score); meta.bestLevel = Math.max(meta.bestLevel, G.levelIdx + 1); checkMissions(); }
   updateWeather(dt);
   updateEncounter(dt);
   updatePlayer(dt);
@@ -1487,7 +1552,7 @@ function drawHUD() {
   ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(W / 2 - 200, 12, 400, 44);
   ctx.fillStyle = '#fff'; ctx.font = 'bold 13px monospace';
   const enc = G.encounter;
-  ctx.fillText('LEVEL ' + (G.levelIdx + 1) + '/' + MAX_LEVELS + ' — ' + curTheme().name + '   ' + fmtTime(G.time), W / 2, 30);
+  ctx.fillText((G.daily ? '[DAILY] ' : '') + 'LEVEL ' + (G.levelIdx + 1) + '/' + MAX_LEVELS + ' — ' + curTheme().name + '   ' + fmtTime(G.time), W / 2, 30);
   ctx.font = '11px monospace'; ctx.fillStyle = '#cfd8ea';
   let line = 'Wave ' + Math.max(1, G.waveIdx + 1) + '/' + G.plan.length + '  •  ' + G.weather.name;
   if (enc) { if (enc.type === 'hazard') line += '  •  survive ' + Math.ceil(enc.dur - enc.t) + 's'; if (enc.type === 'collect') line += '  •  crates ' + (enc.collected || 0) + '/' + enc.cratesLeft; if (enc.type === 'combat' || enc.type === 'miniboss') line += '  •  hostiles ' + G.enemies.length + (enc.queue.length ? '+' : ''); }
@@ -1507,6 +1572,7 @@ function drawHUD() {
   for (const k of G.pickups) { ctx.fillStyle = k.kind === 'health' ? '#6bff8f' : k.kind === 'crate' ? '#fff' : k.kind === 'weapon' ? WEAPONS[k.wid].color : '#ffd36b'; const sz = k.kind === 'weapon' ? 4 : 2; ctx.fillRect(rx + clamp(k.x, 0, W) / W * rw - sz / 2, ry + k.y / H * rh - sz / 2, sz, sz); }
   for (const d of G.debris) { ctx.fillStyle = '#aaa'; ctx.fillRect(rx + clamp(d.x, 0, W) / W * rw - 1, ry + clamp(d.y, 0, H) / H * rh - 1, 2, 2); }
   ctx.fillStyle = '#2f6'; ctx.font = '9px monospace'; ctx.textAlign = 'left'; ctx.fillText('RADAR', rx + 4, ry + 10);
+  drawMissionToasts();
   // score + combo
   ctx.textAlign = 'right'; ctx.font = 'bold 18px monospace'; ctx.fillStyle = '#000'; ctx.fillText(String(G.score).padStart(8, '0'), W - 15, 41); ctx.fillStyle = '#ffd36b'; ctx.fillText(String(G.score).padStart(8, '0'), W - 16, 40);
   ctx.font = '10px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillText('SCORE   best ' + meta.bestScore, W - 16, 54);
@@ -1600,6 +1666,7 @@ function text(s, x, y, c = '#dfe7f5', size = 14, align = 'left', bold) { ctx.tex
 let menuT = 0;
 function drawMenu(dt) {
   menuT += dt;
+  const overlayOpen = screen !== 'menu';
   // animated backdrop
   const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0b1230'); g.addColorStop(0.6, '#3a4f7f'); g.addColorStop(1, '#c48a5a'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#141d30'; for (let i = 0; i < 40; i++) { const x = ((i * 97 - menuT * 30) % (W + 100) + W + 100) % (W + 100) - 50; const h = 60 + ((i * 53) % 200); ctx.fillRect(x, H - h, 40 + (i % 3) * 15, h); }
@@ -1614,12 +1681,63 @@ function drawMenu(dt) {
   title('LAST STAND', 150, '#ffd36b', 72);
   title('AERIAL DEFENSE', 205, '#fff', 30);
   text('Arcade horde shooter roguelike  •  1000 levels, each harder than the last  •  How deep can you go?', W / 2, 245, '#cfd8ea', 14, 'center');
-  button(W / 2 - 130, 490, 260, 54, MOBILE.ui ? 'TAP TO LAUNCH' : 'LAUNCH', () => { newRun(); }, { color: '#e0563c' });
+  if (overlayOpen) return;
+  button(W / 2 - 130, 470, 260, 54, MOBILE.ui ? 'TAP TO LAUNCH' : 'LAUNCH', () => { newRun(false); }, { color: '#e0563c' });
+  const dailyDone = meta.daily.date === todayKey();
+  button(W / 2 - 400, 476, 230, 44, 'DAILY RUN' + (dailyDone ? '  (best ' + meta.daily.best + ')' : ''), () => { newRun(true); }, { color: '#3f6fd6', font: 'bold 14px' });
+  button(W / 2 + 170, 476, 230, 44, 'HANGAR  ⚙ ' + meta.scrap, () => { screen = 'hangar'; }, { color: '#b8862b', font: 'bold 14px' });
+  const unclaimed = MISSIONS.filter(m => !meta.ach[m.id] && m.prog() >= m.goal).length; const done = MISSIONS.filter(m => meta.ach[m.id]).length;
+  button(W / 2 - 400, 530, 230, 40, 'MISSIONS  ' + done + '/' + MISSIONS.length, () => { screen = 'missions'; }, { color: '#4a8a5a', font: 'bold 14px' });
+  button(W / 2 + 170, 530, 230, 40, 'RECORDS', () => { screen = 'records'; }, { color: '#555', font: 'bold 14px' });
+  text('⚙ ' + meta.scrap + ' SCRAP', W / 2, 555, '#ffc44d', 14, 'center', true);
   if (MOBILE.ui) { text('Touch & drag anywhere to fly  •  Auto-fire  •  On-screen buttons for abilities, weapons, pause & talents', W / 2, 580, '#cfd8ea', 13, 'center'); text('Best played in landscape, full screen', W / 2, 600, '#cfd8ea', 13, 'center'); }
   else { text('WASD / Arrows: fly    Auto-fire    1/2 or Q,E: swap weapon    SPACE: dash    F: weld    R: drone    G: orbital strike', W / 2, 580, '#cfd8ea', 13, 'center');
   text('T: talents    ESC: pause    M: mute all    N: music on/off', W / 2, 600, '#cfd8ea', 13, 'center'); }
   text('Learn the patterns: red glow = attack incoming, blue dashes = vulnerable window', W / 2, 630, '#8fa2c4', 12, 'center');
-  text('Runs: ' + meta.runs + '   Best score: ' + meta.bestScore + '   Best combo: x' + meta.bestCombo + '   Best kills: ' + meta.best + '   Deepest level: ' + meta.bestLevel + '   Wins: ' + meta.wins, W / 2, 680, '#8fa2c4', 12, 'center');
+  text('Runs: ' + meta.runs + '   Best score: ' + meta.bestScore + '   Best combo: x' + meta.bestCombo + '   Deepest level: ' + meta.bestLevel + '   Total kills: ' + meta.totals.kills, W / 2, 680, '#8fa2c4', 12, 'center');
+  drawMissionToasts();
+}
+function drawMissionToasts() {
+  const dt = 1 / 60;
+  for (let i = missionToasts.length - 1; i >= 0; i--) { const t = missionToasts[i]; t.t -= dt; if (t.t <= 0) { missionToasts.splice(i, 1); continue; } const a = clamp(Math.min(t.t, 4 - t.t) * 2, 0, 1); const y = 90 + i * 54; ctx.globalAlpha = a; ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(W / 2 - 220, y, 440, 46); ctx.strokeStyle = '#ffc44d'; ctx.lineWidth = 2; ctx.strokeRect(W / 2 - 220, y, 440, 46); text('MISSION COMPLETE: ' + t.m.name, W / 2, y + 19, '#ffc44d', 14, 'center', true); text(t.m.desc + '   +' + t.m.reward + ' scrap', W / 2, y + 36, '#fff', 11, 'center'); ctx.globalAlpha = 1; }
+}
+function drawHangar() {
+  overlay(0.9); title('HANGAR', 48, '#ffc44d', 36);
+  text('⚙ ' + meta.scrap + ' SCRAP AVAILABLE   •   permanent upgrades, kept forever', W / 2, 80, '#fff', 15, 'center', true);
+  const cols = 2, cw = 560, ch = 58, x0 = (W - cw * cols - 24) / 2, y0 = 104;
+  HANGAR.forEach((u, i) => {
+    const col = i % cols, row = Math.floor(i / cols); const x = x0 + col * (cw + 24), y = y0 + row * (ch + 8);
+    const lvl = upg(u.id), maxed = lvl >= u.max, cost = maxed ? 0 : u.cost[lvl], can = !maxed && meta.scrap >= cost;
+    ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(x, y, cw, ch); ctx.strokeStyle = maxed ? u.color : 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1.5; ctx.strokeRect(x, y, cw, ch);
+    text(u.name, x + 12, y + 20, u.color, 14, 'left', true); text(u.desc, x + 12, y + 40, '#cfd8ea', 11);
+    for (let k = 0; k < u.max; k++) { ctx.fillStyle = k < lvl ? u.color : 'rgba(255,255,255,0.15)'; ctx.fillRect(x + 340 + k * 16, y + 12, 12, 8); }
+    if (maxed) text('MAXED', x + cw - 60, y + 34, u.color, 12, 'center', true);
+    else button(x + cw - 120, y + 12, 108, 34, '⚙ ' + cost, () => buyUpgrade(u.id), { color: can ? u.color : '#555', font: 'bold 13px', disabled: !can });
+  });
+  button(W / 2 - 100, H - 56, 200, 42, 'BACK', () => { screen = 'menu'; });
+}
+function drawMissions() {
+  overlay(0.9); title('MISSIONS', 48, '#6bff8f', 36);
+  text('Rewards are paid in scrap automatically when a mission completes', W / 2, 80, '#cfd8ea', 13, 'center');
+  const cols = 2, cw = 560, ch = 42, x0 = (W - cw * cols - 24) / 2, y0 = 100;
+  MISSIONS.forEach((m, i) => {
+    const col = i % cols, row = Math.floor(i / cols); const x = x0 + col * (cw + 24), y = y0 + row * (ch + 6);
+    const done = !!meta.ach[m.id]; const pr = clamp(m.prog() / m.goal, 0, 1);
+    ctx.fillStyle = done ? 'rgba(107,255,143,0.12)' : 'rgba(255,255,255,0.06)'; ctx.fillRect(x, y, cw, ch);
+    text((done ? '✔ ' : '') + m.name, x + 10, y + 17, done ? '#6bff8f' : '#fff', 13, 'left', true); text(m.desc, x + 10, y + 33, '#cfd8ea', 10);
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(x + 330, y + 14, 140, 8); ctx.fillStyle = done ? '#6bff8f' : '#ffc44d'; ctx.fillRect(x + 330, y + 14, 140 * pr, 8);
+    text(done ? 'CLAIMED' : Math.min(m.prog(), m.goal) + ' / ' + m.goal, x + 400, y + 33, '#aaa', 10, 'center');
+    text('+' + m.reward + ' ⚙', x + cw - 12, y + 26, '#ffc44d', 13, 'right', true);
+  });
+  button(W / 2 - 100, H - 56, 200, 42, 'BACK', () => { screen = 'menu'; });
+}
+function drawRecords() {
+  overlay(0.9); title('RECORDS', 48, '#fff', 36);
+  const l = ['Best score: ' + meta.bestScore, 'Best combo: x' + meta.bestCombo, 'Deepest level: ' + meta.bestLevel, 'Best kills in a run: ' + meta.best, 'Total kills: ' + meta.totals.kills, 'Motherships destroyed: ' + meta.totals.bosses, 'Runs flown: ' + meta.runs, 'Scrap earned all-time: ' + meta.scrapEarned, "Today's daily best: " + (meta.daily.date === todayKey() ? meta.daily.best : '—')];
+  l.forEach((s, i) => text(s, W / 2 - 300, 110 + i * 26, '#cfd8ea', 15));
+  text('RECENT RUNS', W / 2 + 60, 110, '#ffd36b', 15, 'left', true);
+  (meta.history || []).forEach((h, i) => text((h.daily ? '[DAILY] ' : '') + 'Score ' + h.score + '   Lv ' + h.level + '   ' + h.kills + ' kills   ' + fmtTime(h.time), W / 2 + 60, 136 + i * 24, '#cfd8ea', 13));
+  button(W / 2 - 100, H - 56, 200, 42, 'BACK', () => { screen = 'menu'; });
 }
 function drawTalents(fromLevelClear) {
   overlay(0.86);
@@ -1662,14 +1780,20 @@ function drawGameOver() {
   const s = G.stats; text('Reached Level ' + (G.levelIdx + 1) + ' — Wave ' + (G.waveIdx + 1) + '   •   Player level ' + G.level + '   •   ' + fmtTime(G.time) + '   •   Best combo x' + s.bestCombo, W / 2, 265, '#fff', 16, 'center');
   text('Kills ' + s.kills + '   Bosses ' + s.bossKills + '   Damage dealt ' + Math.round(s.damage) + '   Damage taken ' + Math.round(s.taken) + '   Shots ' + s.shots, W / 2, 290, '#cfd8ea', 14, 'center');
   text('Talents: ' + (Object.keys(G.talents).length ? Object.keys(G.talents).map(id => { for (const tr of TREE_ORDER) { const t = TREES[tr].talents.find(t => t.id === id); if (t) return t.name; } }).join(', ') : 'none'), W / 2, 320, '#8fa2c4', 12, 'center');
-  button(W / 2 - 110, 400, 220, 50, 'NEW RUN', () => newRun(), { color: '#e0563c' });
-  button(W / 2 - 110, 465, 220, 44, 'MAIN MENU', () => { screen = 'menu'; G = null; });
+  ctx.fillStyle = 'rgba(255,196,77,0.12)'; ctx.fillRect(W / 2 - 260, 345, 520, 40); ctx.strokeStyle = '#ffc44d'; ctx.lineWidth = 1.5; ctx.strokeRect(W / 2 - 260, 345, 520, 40);
+  text('+' + (G.scrapEarned || 0) + ' SCRAP EARNED   •   ⚙ ' + meta.scrap + ' total' + (G.daily ? (G.dailyBest ? '   •   ★ DAILY BEST' : '   •   daily best ' + meta.daily.best) : ''), W / 2, 370, '#ffc44d', 15, 'center', true);
+  button(W / 2 - 230, 410, 220, 50, G.daily ? 'DAILY AGAIN' : 'NEW RUN', () => newRun(!!G.daily), { color: '#e0563c' });
+  button(W / 2 + 10, 410, 220, 50, 'HANGAR  ⚙ ' + meta.scrap, () => { screen = 'hangar'; }, { color: '#b8862b' });
+  button(W / 2 - 110, 475, 220, 44, 'MAIN MENU', () => { screen = 'menu'; G = null; });
+  drawMissionToasts();
 }
 function drawVictory() {
   overlay(0.8); title('THE LAST STAND HELD', 190, '#ffd36b', 54);
   text('One thousand levels. Every mothership in the fleet is scrap. The skies are ours.', W / 2, 240, '#fff', 18, 'center');
   const s = G.stats; text('Time ' + fmtTime(G.time) + '   Player level ' + G.level + '   Kills ' + s.kills + '   Damage dealt ' + Math.round(s.damage) + '   Damage taken ' + Math.round(s.taken), W / 2, 280, '#cfd8ea', 14, 'center');
-  button(W / 2 - 110, 400, 220, 50, 'NEW RUN', () => newRun(), { color: '#e0563c' });
+  endRunBookkeeping();
+  text('+' + (G.scrapEarned || 0) + ' SCRAP EARNED', W / 2, 320, '#ffc44d', 15, 'center', true);
+  button(W / 2 - 110, 400, 220, 50, 'NEW RUN', () => newRun(false), { color: '#e0563c' });
   button(W / 2 - 110, 465, 220, 44, 'MAIN MENU', () => { screen = 'menu'; G = null; });
 }
 
@@ -1687,7 +1811,7 @@ function frame(now) {
   if (pressed.KeyM) { Audio.toggle(); }
   if (pressed.KeyN) { Music.toggle(); }
   Music.poke();
-  if (screen === 'menu' || screen === 'gameover' || screen === 'victory') Music.play('title');
+  if (screen === 'menu' || screen === 'gameover' || screen === 'victory' || screen === 'hangar' || screen === 'missions' || screen === 'records') Music.play('title');
   if (screen === 'play') {
     if (pressed.Escape || pressed.KeyP) screen = 'pause';
     else if (pressed.KeyT) screen = 'talents';
@@ -1706,9 +1830,12 @@ function frame(now) {
     drawGame(); drawGameOver();
   } else if (screen === 'victory') {
     drawGame(); drawVictory();
-  } else {
+  } else if (screen === 'hangar') { drawMenu(dt); drawHangar(); if (pressed.Escape) screen = 'menu'; }
+  else if (screen === 'missions') { drawMenu(dt); drawMissions(); if (pressed.Escape) screen = 'menu'; }
+  else if (screen === 'records') { drawMenu(dt); drawRecords(); if (pressed.Escape) screen = 'menu'; }
+  else {
     drawMenu(dt);
-    if (pressed.Enter) newRun();
+    if (pressed.Enter) newRun(false);
   }
   // mobile: portrait warning
   if (MOBILE.ui && window.innerHeight > window.innerWidth) { ctx.fillStyle = 'rgba(3,5,12,0.9)'; ctx.fillRect(0, 0, W, H); ctx.textAlign = 'center'; ctx.font = 'bold 40px monospace'; ctx.fillStyle = '#ffd36b'; ctx.fillText('⟳ ROTATE TO LANDSCAPE', W / 2, H / 2 - 10); ctx.font = '16px monospace'; ctx.fillStyle = '#cfd8ea'; ctx.fillText('LAST STAND plays sideways', W / 2, H / 2 + 30); }
@@ -1717,7 +1844,7 @@ function frame(now) {
   mouse.clicked = false;
   for (const k in pressed) pressed[k] = false;
   // debug hook
-  window.__LS = { G, get screen() { return screen; }, set screen(v) { screen = v; }, startLevel, spawnGroup, spawnBoss, addXP, giveWeapon, newRun, buyTalent, respec, switchWeapon, keys, pressed, MOBILE, TOUCH, get touchButtons() { return touchButtons; } };
+  window.__LS = { G, get screen() { return screen; }, set screen(v) { screen = v; }, startLevel, spawnGroup, spawnBoss, addXP, giveWeapon, newRun, buyTalent, respec, switchWeapon, keys, pressed, MOBILE, TOUCH, meta, buyUpgrade, endRunBookkeeping, checkMissions, get touchButtons() { return touchButtons; } };
 }
 schedule(frame);
 </script>
