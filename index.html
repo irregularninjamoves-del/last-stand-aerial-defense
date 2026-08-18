@@ -353,7 +353,7 @@ const TREES = {
     { id: 'artillery', name: 'Artillery Mastery', cost: 2, desc: 'Powerups last 75% longer, swap 40% faster; heavy weapons drop 2x' },
     { id: 'crit', name: 'Critical Strike', cost: 3, desc: '15% chance for 2x damage' },
     { id: 'explosive', name: 'Explosive Rounds', cost: 3, desc: 'Bullets detonate in a small AoE' },
-    { id: 'nuke', name: 'Tactical Nuke', cost: 4, desc: '[B] +1 nuke banked every level. Wipes all mobs, hurts bosses' },
+    { id: 'nuke', name: 'Nuclear Stockpile', cost: 4, desc: '+1 extra nuke every level; nukes hit bosses for 24% instead of 12%' },
   ]},
   repair: { name: 'REPAIR', color: '#5da8ff', dark: '#0e2547', passive: '+2% healing per point invested', talents: [
     { id: 'autorepair', name: 'Auto-Repair', cost: 1, desc: 'Regen 1% max HP/s when out of combat' },
@@ -673,7 +673,7 @@ function startLevel(idx) {
   const p = P(); p.x = 260; p.y = H / 2; p.vx = p.vy = 0; p.dead = false; p.inv = 1;
   if (idx > 0) { p.hp = Math.max(p.hp, Math.round(p.maxHp * 0.6)); }
   G.plan = buildPlan(idx); G.wpnBudget = irand(2, 3) + (has('salvage') ? 1 : 0); G.killsSinceDrop = 0;
-  if (has('nuke')) { G.nukes = (G.nukes || 0) + 1; addText(p.x, p.y - 44, 'NUKE BANKED (' + G.nukes + ')', '#ffe36b', true); }
+  G.nukes = (G.nukes || 0) + 1 + (has('nuke') ? 1 : 0); addText(p.x, p.y - 44, 'NUKE BANKED (' + G.nukes + ')  [B]', '#ffe36b', true);
   buildParallax(theme);
   buildAmbient(theme);
   Audio.ambience(G.weather.id === 'rain' ? 'rain' : G.weather.id === 'storm' ? 'storm' : G.weather.id === 'sand' ? 'sand' : 'none');
@@ -1550,7 +1550,7 @@ function updateNuke(dt) {
   const n = G.nuke; n.t += dt;
   // shockwave: fast expansion, reaches full screen in ~0.9s (real time, unaffected by slow-mo)
   n.r = 1600 * (1 - Math.pow(1 - clamp(n.t / 0.95, 0, 1), 2.2));
-  const dmgBoss = G.boss && G.boss.maxHp ? G.boss.maxHp * 0.12 : 0;
+  const dmgBoss = G.boss && G.boss.maxHp ? G.boss.maxHp * (has('nuke') ? 0.24 : 0.12) : 0;
   for (const e of G.enemies) if (!e.dead && !n.hit.has(e) && dist(e.x, e.y, n.x, n.y) < n.r) { n.hit.add(e); killEnemy(e, true); spawnExplosion(e.x, e.y, e.r * 3, '#ffe36b'); }
   if (G.boss && !n.bossHit && G.boss.dying === undefined && dist(G.boss.x, G.boss.y, n.x, n.y) < n.r) { n.bossHit = true; damageEnemyRaw(G.boss, dmgBoss); G.boss.flash = 0.4; addText(G.boss.x, G.boss.y - 90, '-' + Math.round(dmgBoss), '#ffe36b', true); spawnRing(G.boss.x, G.boss.y, '#ffe36b', 200); }
   for (const m of G.mines) if (dist(m.x, m.y, n.x, n.y) < n.r) { m.t = 0; }
@@ -1650,7 +1650,7 @@ function drawHUD() {
   if (has('weld')) abil.push(['F', 'WELD', p.weldCd, 60 * cdMult(), '#5da8ff']);
   if (has('drone')) abil.push(['R', 'DRONE', p.droneCd, 45 * cdMult(), '#5da8ff']);
   if (has('uplink')) abil.push(['G', 'STRIKE', p.strikeCd || 0, 90 * cdMult(), '#ffc44d']);
-  if (has('nuke')) abil.push(['B', 'NUKE x' + (G.nukes || 0), (G.nukes || 0) > 0 ? 0 : 1, 1, '#ffe36b', 'EMPTY']);
+  abil.push(['B', 'NUKE x' + (G.nukes || 0), (G.nukes || 0) > 0 ? 0 : 1, 1, '#ffe36b', 'EMPTY']);
   if (has('shield')) abil.push(['', 'SHIELD', p.shieldUp ? 0 : Math.max(p.shieldCd, 0.01), 30 * cdMult(), '#5da8ff']);
   if (has('reactive')) abil.push(['', 'REACT', p.reactiveCd, 300 * cdMult(), '#6bff8f']);
   abil.forEach((a, i) => { const x = 290 + i * 74, y = H - 66; ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y, 66, 46); const f = a[2] > 0 ? clamp(1 - a[2] / a[3], 0, 1) : 1; ctx.fillStyle = a[2] > 0 ? '#333' : a[4]; ctx.fillRect(x + 4, y + 4, 58 * f, 30); ctx.fillStyle = '#fff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'; ctx.fillText(a[1], x + 33, y + 23); ctx.font = '10px monospace'; ctx.fillStyle = '#ccc'; ctx.fillText(a[2] > 0 ? (a[5] || Math.ceil(a[2]) + 's') : a[0] || 'READY', x + 33, y + 43); ctx.textAlign = 'left'; });
@@ -1731,7 +1731,7 @@ function drawTouchControls() {
   if (has('weld')) defs.push({ code: 'KeyF', label: 'WELD', cd: p.weldCd, max: 60 * cdMult(), color: '#5da8ff' });
   if (has('drone')) defs.push({ code: 'KeyR', label: 'DRONE', cd: p.droneCd, max: 45 * cdMult(), color: '#5da8ff' });
   if (has('uplink')) defs.push({ code: 'KeyG', label: 'STRIKE', cd: p.strikeCd || 0, max: 90 * cdMult(), color: '#ffc44d' });
-  if (has('nuke')) defs.push({ code: 'KeyB', label: 'NUKE ' + (G.nukes || 0), cd: (G.nukes || 0) > 0 ? 0 : 1, max: 1, color: '#ffe36b' });
+  defs.push({ code: 'KeyB', label: 'NUKE ' + (G.nukes || 0), cd: (G.nukes || 0) > 0 ? 0 : 1, max: 1, color: '#ffe36b' });
   const owned = ownedWeapons();
   const slots = [[W - 70, H - 70], [W - 150, H - 100], [W - 90, H - 160], [W - 200, H - 190]];
   defs.forEach((d, i) => { const [x, y] = slots[i] || [W - 70 - i * 80, H - 70]; touchButtons.push({ x, y, r: 34, ...d }); });
@@ -1752,7 +1752,7 @@ function drawTouchControls() {
   if (TOUCH.active) {
     ctx.beginPath(); ctx.arc(TOUCH.ox, TOUCH.oy, TOUCH.radius, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2; ctx.stroke();
     ctx.beginPath(); ctx.arc(TOUCH.ox + clamp(TOUCH.cx - TOUCH.ox, -TOUCH.radius, TOUCH.radius), TOUCH.oy + clamp(TOUCH.cy - TOUCH.oy, -TOUCH.radius, TOUCH.radius), 24, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.stroke();
-  } else if (G.time < 8 && G.levelIdx === 0) { ctx.textAlign = 'center'; ctx.font = 'bold 14px monospace'; ctx.fillStyle = 'rgba(255,255,255,' + (0.5 + 0.4 * Math.sin(G.time * 4)) + ')'; ctx.fillText('TOUCH & DRAG ANYWHERE TO FLY  •  AUTO-FIRE', W / 2, H - 30); }
+  } else if (G.time < 8 && G.levelIdx === 0) { ctx.textAlign = 'center'; ctx.font = 'bold 14px monospace'; ctx.fillStyle = 'rgba(255,255,255,' + (0.5 + 0.4 * Math.sin(G.time * 4)) + ')'; ctx.fillText('TOUCH & DRAG TO FLY  •  AUTO-FIRE  •  NUKE BUTTON WHEN SWARMED', W / 2, H - 30); }
 }
 
 // ============================================================================
