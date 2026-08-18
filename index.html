@@ -40,7 +40,7 @@ window.addEventListener('resize', fitCanvas); fitCanvas();
 // Put PNGs in img/ (authored at 2x). SPR.get('player') returns an Image once loaded, else null -> caller draws vector.
 const SPR = (() => {
   const cache = {}, state = {};
-  const FILES = { player: 'img/player.png', drone: 'img/drone.png', bomber: 'img/bomber.png', interceptor: 'img/interceptor.png', cannon: 'img/cannon.png', swarm: 'img/swarm.png', boss: 'img/boss_mothership.png', boss_prime: 'img/boss_prime.png' };
+  const FILES = { player: 'img/player.png', drone: 'img/drone.png', bomber: 'img/bomber.png', bomber_open: 'img/bomber_open.png', interceptor: 'img/interceptor.png', cannon: 'img/cannon.png', swarm: 'img/swarm.png', boss: 'img/boss_mothership.png', boss_prime: 'img/boss_prime.png' };
   function get(id) {
     if (state[id] === 'ok') return cache[id];
     if (state[id] === undefined && FILES[id]) { state[id] = 'loading'; const im = new Image(); im.onload = () => { cache[id] = im; state[id] = 'ok'; }; im.onerror = () => { state[id] = 'missing'; }; im.src = FILES[id]; }
@@ -1456,12 +1456,13 @@ function drawEnemy(e) {
   ctx.fillStyle = col; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2;
   const r = e.r;
   // sprite path: heights in game units per type (elites scale with r); hit-flash via canvas filter
-  const SPR_H = { drone: 26, bomber: 44, interceptor: 30, cannon: 56, swarm: 13 };
+  const SPR_H = { drone: 26, bomber: 46, interceptor: 30, cannon: 56, swarm: 13 };
   if (SPR.get(e.type)) {
     if (e.flash > 0) ctx.filter = 'brightness(2.6) saturate(0.3)';
-    SPR.draw(e.type, SPR_H[e.type] * (e.elite ? 1.5 : 1));
+    const useOpen = e.type === 'bomber' && e.tele > 0 && SPR.get('bomber_open');
+    SPR.draw(useOpen ? 'bomber_open' : e.type, SPR_H[e.type] * (e.elite ? 1.5 : 1));
     ctx.filter = 'none';
-    if (e.type === 'bomber' && e.tele > 0) { ctx.fillStyle = 'rgba(255,60,40,0.85)'; ctx.fillRect(-r * 0.3, r * 0.35, r * 0.6, r * 0.3); }
+    if (e.type === 'bomber' && e.tele > 0 && !useOpen) { ctx.fillStyle = 'rgba(255,60,40,0.85)'; ctx.fillRect(-r * 0.3, r * 0.35, r * 0.6, r * 0.3); }
     if (e.type === 'cannon' && e.tele > 0) { ctx.fillStyle = 'rgba(255,60,40,0.85)'; ctx.beginPath(); ctx.arc(0, 0, r * 0.35, 0, TAU); ctx.fill(); }
   }
   else if (e.type === 'drone') { ctx.beginPath(); ctx.moveTo(-r, 0); ctx.lineTo(r * 0.3, -r * 0.7); ctx.lineTo(r, 0); ctx.lineTo(r * 0.3, r * 0.7); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#300'; ctx.fillRect(-r * 0.4, -3, 6, 6); }
