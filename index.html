@@ -40,7 +40,7 @@ window.addEventListener('resize', fitCanvas); fitCanvas();
 // Put PNGs in img/ (authored at 2x). SPR.get('player') returns an Image once loaded, else null -> caller draws vector.
 const SPR = (() => {
   const cache = {}, state = {};
-  const FILES = { player: 'img/player.png', drone: 'img/drone.png', bomber: 'img/bomber.png', bomber_open: 'img/bomber_open.png', interceptor: 'img/interceptor.png', cannon: 'img/cannon.png', cannon_fire: 'img/cannon_fire.png', swarm: 'img/swarm.png', swarm_up: 'img/swarm_up.png', boss: 'img/boss_mothership.png', boss_armed: 'img/boss_armed.png', boss_damaged: 'img/boss_damaged.png', boss_prime: 'img/boss_prime.png', boss_prime_armed: 'img/boss_prime_armed.png', boss_prime_damaged: 'img/boss_prime_damaged.png' };
+  const FILES = { player: 'img/player.png', drone: 'img/drone.png', bomber: 'img/bomber.png', bomber_open: 'img/bomber_open.png', interceptor: 'img/interceptor.png', cannon: 'img/cannon.png', cannon_fire: 'img/cannon_fire.png', swarm: 'img/swarm.png', swarm_up: 'img/swarm_up.png', boss: 'img/boss_mothership.png', boss_armed: 'img/boss_armed.png', boss_damaged: 'img/boss_damaged.png', boss_prime: 'img/boss_prime.png', boss_prime_armed: 'img/boss_prime_armed.png', boss_prime_damaged: 'img/boss_prime_damaged.png', b_assault: 'img/b_assault.png', b_laser: 'img/b_laser.png', b_plasma: 'img/b_plasma.png', b_grenade: 'img/b_grenade.png', e_orange: 'img/e_orange.png', e_pink: 'img/e_pink.png', e_violet: 'img/e_violet.png', e_red: 'img/e_red.png' };
   function get(id) {
     if (state[id] === 'ok') return cache[id];
     if (state[id] === undefined && FILES[id]) { state[id] = 'loading'; const im = new Image(); im.onload = () => { cache[id] = im; state[id] = 'ok'; }; im.onerror = () => { state[id] = 'missing'; }; im.src = FILES[id]; }
@@ -1571,6 +1571,8 @@ function drawProjectiles() {
   for (const b of G.bullets) {
     ctx.strokeStyle = b.c; ctx.lineWidth = b.r; ctx.lineCap = 'round';
     if (b.trail.length > 1) { ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.moveTo(b.trail[0].x, b.trail[0].y); for (const t of b.trail) ctx.lineTo(t.x, t.y); ctx.stroke(); ctx.globalAlpha = 1; }
+    const sid = 'b_' + b.kind;
+    if (SPR.get(sid)) { const hgt = b.kind === 'assault' ? 8 : b.kind === 'laser' ? 7 : 13; ctx.save(); ctx.translate(b.x, b.y); if (b.kind === 'assault' || b.kind === 'laser' || b.kind === 'plasma') ctx.rotate(Math.atan2(b.vy, b.vx)); else ctx.rotate(G.time * 6); SPR.draw(sid, hgt); ctx.restore(); continue; }
     ctx.fillStyle = b.kind === 'grenade' ? '#3a5' : '#fff'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill();
     if (b.kind === 'grenade') { ctx.strokeStyle = '#9dff6b'; ctx.lineWidth = 2; ctx.stroke(); }
   }
@@ -1579,6 +1581,8 @@ function drawProjectiles() {
   for (const b of G.ebullets) {
     ctx.strokeStyle = b.c; ctx.lineWidth = b.r; ctx.lineCap = 'round';
     if (b.trail.length > 1) { ctx.globalAlpha = 0.45; ctx.beginPath(); ctx.moveTo(b.trail[0].x, b.trail[0].y); for (const t of b.trail) ctx.lineTo(t.x, t.y); ctx.stroke(); ctx.globalAlpha = 1; }
+    const eid = b.c === '#ff5db8' ? 'e_pink' : b.c === '#c9b3ff' ? 'e_violet' : b.c === '#ff5d5d' ? 'e_red' : 'e_orange';
+    if (SPR.get(eid)) { ctx.save(); ctx.translate(b.x, b.y); SPR.draw(eid, b.r * 2.6); ctx.restore(); continue; }
     ctx.fillStyle = b.c; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.45, 0, TAU); ctx.fill();
   }
   for (const m of G.mines) { ctx.fillStyle = m.arm > 0 ? '#665' : '#c9a25c'; ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, TAU); ctx.fill(); ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = Math.floor(G.time * 6) % 2 ? '#ff3030' : '#600'; ctx.beginPath(); ctx.arc(m.x, m.y, 4, 0, TAU); ctx.fill(); for (let i = 0; i < 6; i++) { const a = i * TAU / 6 + G.time; ctx.fillStyle = '#333'; ctx.fillRect(m.x + Math.cos(a) * m.r - 2, m.y + Math.sin(a) * m.r - 2, 4, 4); } }
