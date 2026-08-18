@@ -40,7 +40,7 @@ window.addEventListener('resize', fitCanvas); fitCanvas();
 // Put PNGs in img/ (authored at 2x). SPR.get('player') returns an Image once loaded, else null -> caller draws vector.
 const SPR = (() => {
   const cache = {}, state = {};
-  const FILES = { player: 'img/player.png', drone: 'img/drone.png', bomber: 'img/bomber.png', bomber_open: 'img/bomber_open.png', interceptor: 'img/interceptor.png', cannon: 'img/cannon.png', cannon_fire: 'img/cannon_fire.png', swarm: 'img/swarm.png', swarm_up: 'img/swarm_up.png', boss: 'img/boss_mothership.png', boss_armed: 'img/boss_armed.png', boss_damaged: 'img/boss_damaged.png', boss_prime: 'img/boss_prime.png' };
+  const FILES = { player: 'img/player.png', drone: 'img/drone.png', bomber: 'img/bomber.png', bomber_open: 'img/bomber_open.png', interceptor: 'img/interceptor.png', cannon: 'img/cannon.png', cannon_fire: 'img/cannon_fire.png', swarm: 'img/swarm.png', swarm_up: 'img/swarm_up.png', boss: 'img/boss_mothership.png', boss_armed: 'img/boss_armed.png', boss_damaged: 'img/boss_damaged.png', boss_prime: 'img/boss_prime.png', boss_prime_armed: 'img/boss_prime_armed.png', boss_prime_damaged: 'img/boss_prime_damaged.png' };
   function get(id) {
     if (state[id] === 'ok') return cache[id];
     if (state[id] === undefined && FILES[id]) { state[id] = 'loading'; const im = new Image(); im.onload = () => { cache[id] = im; state[id] = 'ok'; }; im.onerror = () => { state[id] = 'missing'; }; im.src = FILES[id]; }
@@ -1487,7 +1487,8 @@ function drawBoss(b) {
   if (SPR.get('boss')) {
     // sprite: 3 states — damaged in final phase / dying, armed while telegraphing, else idle. Prime reskin if present.
     const dmg = b.phase === 3 || b.dying !== undefined || b.hp < b.maxHp * 0.33;
-    const id = b.final && SPR.get('boss_prime') ? 'boss_prime' : dmg && SPR.get('boss_damaged') ? 'boss_damaged' : b.tele > 0 && SPR.get('boss_armed') ? 'boss_armed' : 'boss';
+    const pre = b.final && SPR.get('boss_prime') ? 'boss_prime' : 'boss';
+    const id = dmg && SPR.get(pre + '_damaged') ? pre + '_damaged' : b.tele > 0 && SPR.get(pre + '_armed') ? pre + '_armed' : pre;
     if (b.flash > 0) ctx.filter = 'brightness(1.8)';
     if (b.dying !== undefined) ctx.filter = 'brightness(0.6) saturate(0.6)';
     if (b.final && id !== 'boss_prime') ctx.filter = (ctx.filter === 'none' ? '' : ctx.filter + ' ') + 'hue-rotate(300deg)';
