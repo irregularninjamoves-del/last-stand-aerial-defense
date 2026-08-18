@@ -6,6 +6,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#05070c">
+<link rel="manifest" href="manifest.webmanifest">
 <title>LAST STAND: Aerial Defense</title>
 <style>
   html,body{margin:0;height:100%;background:#05070c;overflow:hidden;font-family:"Segoe UI",system-ui,sans-serif;color:#dfe7f5}
@@ -73,15 +75,17 @@ let touchButtons = [];        // rebuilt each frame by drawTouchControls: {x,y,r
 const heldTouchIds = {};      // touch id -> button code (for release)
 function touchPos(t) { const r = canvas.getBoundingClientRect(); return { x: (t.clientX - r.left) * W / r.width, y: (t.clientY - r.top) * H / r.height }; }
 function hitTouchButton(x, y) { for (const b of touchButtons) if (dist(x, y, b.x, b.y) <= b.r + 8) return b; return null; }
+const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const STANDALONE = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 function goFullscreen() {
   const el = document.documentElement;
-  if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen().catch(() => { });
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!document.fullscreenElement && !document.webkitFullscreenElement && req) { try { const r = req.call(el, { navigationUI: 'hide' }); if (r && r.catch) r.catch(() => { }); } catch (e) { } }
   const so = window.screen && window.screen.orientation;
   if (so && so.lock) so.lock('landscape').catch(() => { });
 }
 canvas.addEventListener('touchstart', e => {
   e.preventDefault(); MOBILE.ui = true; MOBILE.seen = true; Audio.unlock();
-  if (!MOBILE.fsTried) { MOBILE.fsTried = true; goFullscreen(); }
   for (const t of e.changedTouches) {
     const p = touchPos(t);
     if (screen !== 'play') { mouse.x = p.x; mouse.y = p.y; mouse.clicked = true; continue; }
@@ -106,6 +110,7 @@ canvas.addEventListener('touchmove', e => {
 }, { passive: false });
 function endTouch(e) {
   e.preventDefault();
+  if (e.type === 'touchend' && !document.fullscreenElement && screen !== 'play') goFullscreen();
   for (const t of e.changedTouches) {
     if (TOUCH.active && t.identifier === TOUCH.id) { TOUCH.active = false; TOUCH.ax = TOUCH.ay = 0; }
     if (heldTouchIds[t.identifier]) { keys[heldTouchIds[t.identifier]] = false; delete heldTouchIds[t.identifier]; }
@@ -1631,6 +1636,7 @@ function drawTouchControls() {
   // pause / talents top-right under score
   touchButtons.push({ x: W - 30, y: 76, r: 20, code: 'Escape', label: 'II', color: '#fff' });
   touchButtons.push({ x: W - 78, y: 76, r: 20, code: 'KeyT', label: 'T', color: G.points > 0 ? '#ffd36b' : '#fff' });
+  if (!IOS && !STANDALONE && !document.fullscreenElement) touchButtons.push({ x: W - 126, y: 76, r: 20, code: 'FullScreen', label: '⛶', color: '#8fa2c4' });
   for (const b of touchButtons) {
     const held = keys[b.code];
     ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fillStyle = held ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.45)'; ctx.fill();
@@ -1690,6 +1696,7 @@ function drawMenu(dt) {
   button(W / 2 - 400, 530, 230, 40, 'MISSIONS  ' + done + '/' + MISSIONS.length, () => { screen = 'missions'; }, { color: '#4a8a5a', font: 'bold 14px' });
   button(W / 2 + 170, 530, 230, 40, 'RECORDS', () => { screen = 'records'; }, { color: '#555', font: 'bold 14px' });
   text('⚙ ' + meta.scrap + ' SCRAP', W / 2, 555, '#ffc44d', 14, 'center', true);
+  if (MOBILE.ui && !STANDALONE) { if (IOS) text('iPhone/iPad: tap Share → "Add to Home Screen" for full screen', W / 2, 660, '#ffd36b', 12, 'center'); else if (!document.fullscreenElement) button(W - 150, 16, 134, 34, '⛶ FULL SCREEN', () => goFullscreen(), { color: '#3f6fd6', font: 'bold 12px' }); }
   if (MOBILE.ui) { text('Touch & drag anywhere to fly  •  Auto-fire  •  On-screen buttons for abilities, weapons, pause & talents', W / 2, 580, '#cfd8ea', 13, 'center'); text('Best played in landscape, full screen', W / 2, 600, '#cfd8ea', 13, 'center'); }
   else { text('WASD / Arrows: fly    Auto-fire    1/2 or Q,E: swap weapon    SPACE: dash    F: weld    R: drone    G: orbital strike', W / 2, 580, '#cfd8ea', 13, 'center');
   text('T: talents    ESC: pause    M: mute all    N: music on/off', W / 2, 600, '#cfd8ea', 13, 'center'); }
@@ -1810,6 +1817,7 @@ function frame(now) {
   // global keys
   if (pressed.KeyM) { Audio.toggle(); }
   if (pressed.KeyN) { Music.toggle(); }
+  if (pressed.FullScreen) goFullscreen();
   Music.poke();
   if (screen === 'menu' || screen === 'gameover' || screen === 'victory' || screen === 'hangar' || screen === 'missions' || screen === 'records') Music.play('title');
   if (screen === 'play') {
