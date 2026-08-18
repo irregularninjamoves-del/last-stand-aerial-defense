@@ -68,7 +68,7 @@ window.addEventListener('mouseup', () => { mouse.down = false; });
 
 // ---------------------------------------------------------------- touch / mobile
 const MOBILE = { ui: (navigator.maxTouchPoints > 0 && matchMedia('(pointer: coarse)').matches), seen: false };
-const TOUCH = { active: false, id: null, ox: 0, oy: 0, cx: 0, cy: 0, ax: 0, ay: 0, radius: 64 };
+const TOUCH = { active: false, id: null, ox: 0, oy: 0, cx: 0, cy: 0, ax: 0, ay: 0, radius: 56, follow: 1.7 };
 let touchButtons = [];        // rebuilt each frame by drawTouchControls: {x,y,r,code,label,...}
 const heldTouchIds = {};      // touch id -> button code (for release)
 function touchPos(t) { const r = canvas.getBoundingClientRect(); return { x: (t.clientX - r.left) * W / r.width, y: (t.clientY - r.top) * H / r.height }; }
@@ -96,8 +96,9 @@ canvas.addEventListener('touchmove', e => {
     if (TOUCH.active && t.identifier === TOUCH.id) {
       const p = touchPos(t); TOUCH.cx = p.x; TOUCH.cy = p.y;
       let dx = p.x - TOUCH.ox, dy = p.y - TOUCH.oy; const d = Math.hypot(dx, dy);
-      if (d > TOUCH.radius) { TOUCH.ox = p.x - dx / d * TOUCH.radius; TOUCH.oy = p.y - dy / d * TOUCH.radius; dx = dx / d * TOUCH.radius; dy = dy / d * TOUCH.radius; } // stick follows thumb
-      const dead = 6; const m = Math.max(0, d - dead) / (TOUCH.radius - dead);
+      // base only follows once the thumb drifts well past the rim, so direction reversals respond instantly
+      if (d > TOUCH.radius * TOUCH.follow) { const keep = TOUCH.radius * TOUCH.follow; TOUCH.ox = p.x - dx / d * keep; TOUCH.oy = p.y - dy / d * keep; }
+      const dead = 4; const m = Math.pow(clamp((d - dead) / (TOUCH.radius - dead), 0, 1), 0.75); // quick ramp, saturates at rim
       TOUCH.ax = d > dead ? clamp(dx / d * m, -1, 1) : 0; TOUCH.ay = d > dead ? clamp(dy / d * m, -1, 1) : 0;
       if (mouse) { mouse.x = p.x; mouse.y = p.y; }
     }
@@ -310,11 +311,11 @@ const Music = (() => {
 // ============================================================================
 const WEAPONS = {
   assault: { name: 'ASSAULT RIFLES', dmg: 20, rate: 0.1, ammo: Infinity, color: '#ffd36b', desc: 'Twin mounts. Infinite ammo.' },
-  laser: { name: 'LASER CANNONS', dmg: 35, rate: 0.14, mag: 20, reload: 1.1, ammo: 120, color: '#7df9ff', desc: 'Precision. 20-round magazine.' },
-  grenade: { name: 'GRENADE LAUNCHER', dmg: 50, rate: 0.8, ammo: 30, color: '#9dff6b', desc: 'AoE 40 radius, arcing.' },
-  rail: { name: 'RAIL GUN', dmg: 80, rate: 0.6, ammo: 24, cost: 2, color: '#d19bff', desc: 'Pierces everything. 2 ammo/shot.' },
-  beam: { name: 'BEAM CANNON', dmg: 30, rate: 0, ammo: 240, drain: 24, color: '#ff8adf', desc: '30 DPS continuous. Drains ammo.' },
-  plasma: { name: 'PLASMA RIFLES', dmg: 40, rate: 0.28, ammo: 90, color: '#6bd1ff', desc: 'Homing bolts.' },
+  laser: { name: 'LASER CANNONS', dmg: 35, rate: 0.14, dur: 45, color: '#7df9ff', desc: 'Fast precision bolts.' },
+  grenade: { name: 'GRENADE LAUNCHER', dmg: 50, rate: 0.8, dur: 40, color: '#9dff6b', desc: 'AoE 40 radius, arcing.' },
+  rail: { name: 'RAIL GUN', dmg: 80, rate: 0.6, dur: 30, color: '#d19bff', desc: 'Pierces everything.' },
+  beam: { name: 'BEAM CANNON', dmg: 30, rate: 0, dur: 30, color: '#ff8adf', desc: '30 DPS continuous.' },
+  plasma: { name: 'PLASMA RIFLES', dmg: 40, rate: 0.28, dur: 40, color: '#6bd1ff', desc: 'Homing bolts.' },
 };
 const WEAPON_ORDER = ['assault', 'laser', 'grenade', 'rail', 'beam', 'plasma'];
 
@@ -323,10 +324,10 @@ const TREES = {
     { id: 'rapid', name: 'Rapid Fire', cost: 1, desc: '+30% weapon fire rate' },
     { id: 'multi', name: 'Multi-Shot', cost: 1, desc: 'Bullets fire in a slight cone (3 rounds)' },
     { id: 'pierce', name: 'Piercing Rounds', cost: 2, desc: 'Bullets pass through 2 extra enemies' },
-    { id: 'artillery', name: 'Artillery Mastery', cost: 2, desc: 'Unlock Grenade Launcher, Rail Gun & Beam Cannon now' },
+    { id: 'artillery', name: 'Artillery Mastery', cost: 2, desc: 'Weapon powerups last 50% longer; heavy weapons drop 2x' },
     { id: 'crit', name: 'Critical Strike', cost: 3, desc: '15% chance for 2x damage' },
     { id: 'explosive', name: 'Explosive Rounds', cost: 3, desc: 'Bullets detonate in a small AoE' },
-    { id: 'swap', name: 'Weapon Swap Speed', cost: 4, desc: 'Switch & reload 40% faster' },
+    { id: 'swap', name: 'Weapon Swap Speed', cost: 4, desc: 'Switch 40% faster; powerups last 25% longer' },
   ]},
   repair: { name: 'REPAIR', color: '#5da8ff', dark: '#0e2547', passive: '+2% healing per point invested', talents: [
     { id: 'autorepair', name: 'Auto-Repair', cost: 1, desc: 'Regen 1% max HP/s when out of combat' },
@@ -435,7 +436,7 @@ function newRun() {
 function makePlayer() {
   return {
     x: 260, y: H / 2, vx: 0, vy: 0, r: 14, hp: 100, maxHp: 100, tilt: 0,
-    weapon: 'assault', weapons: { assault: { ammo: Infinity, mag: 0 } }, fireT: 0, reloadT: 0, swapT: 0,
+    weapon: 'assault', pw: null, pwT: 0, pwMax: 1, fireT: 0, swapT: 0,
     inv: 0, dashT: 0, dashCd: 0, weldCd: 0, droneCd: 0, shieldCd: 0, shieldUp: false, shieldRecharge: 0, reactiveCd: 0,
     combatT: 0, dead: false, thrust: 0, muzzle: 0, beamOn: false, railFlash: 0, speedMult: 1,
   };
@@ -455,12 +456,16 @@ function recalcPlayer() {
   if (oldMax > 0) p.hp = clamp(p.hp * p.maxHp / oldMax, 1, p.maxHp);
   p.speedMult = has('armor') ? 0.9 : 1;
 }
+const powerupDur = id => WEAPONS[id].dur * (has('artillery') ? 1.5 : 1) * (has('swap') ? 1.25 : 1);
+// Timed powerup: you carry Assault Rifles + at most one powerup weapon. Grabbing the same one refreshes the timer.
 function giveWeapon(id, silent) {
   const p = P();
-  if (p.weapons[id]) { p.weapons[id].ammo = Math.min(WEAPONS[id].ammo * 2, p.weapons[id].ammo + WEAPONS[id].ammo); return; }
-  p.weapons[id] = { ammo: WEAPONS[id].ammo, mag: WEAPONS[id].mag || 0 };
-  G.unlockedWeapons.push(id);
-  if (!silent) { banner(WEAPONS[id].name + ' ONLINE', WEAPONS[id].color, 'Press ' + (WEAPON_ORDER.indexOf(id) + 1) + ' or Q/E to switch'); Audio.sfx.unlock(); }
+  if (id === 'assault') return;
+  const dur = powerupDur(id);
+  if (p.pw === id) { p.pwT = Math.max(p.pwT, dur); p.pwMax = Math.max(p.pwMax, dur); if (!silent) addText(p.x, p.y - 30, WEAPONS[id].name + ' EXTENDED', WEAPONS[id].color); }
+  else { p.pw = id; p.pwT = dur; p.pwMax = dur; if (!silent) { banner(WEAPONS[id].name, WEAPONS[id].color, 'WEAPON POWERUP — ' + Math.round(dur) + 's'); Audio.sfx.unlock(); } }
+  if (G.unlockedWeapons.indexOf(id) < 0) G.unlockedWeapons.push(id);
+  switchWeapon(id, 0.15);
 }
 function heal(amt, src) {
   const p = P();
@@ -524,7 +529,6 @@ function buyTalent(tree, i) {
   if (has(t.id) || G.points < t.cost) return false;
   if (i > 0 && !has(TREES[tree].talents[i - 1].id)) return false;
   G.points -= t.cost; G.talents[t.id] = true; G.invested[tree] += t.cost;
-  if (t.id === 'artillery') { ['grenade', 'rail', 'beam'].forEach(w => giveWeapon(w, true)); }
   if (t.id === 'shield') P().shieldUp = true;
   recalcPlayer(); Audio.sfx.pickup();
   return true;
@@ -578,7 +582,7 @@ function startLevel(idx) {
   G.enemies = []; G.bullets = []; G.ebullets = []; G.mines = []; G.pickups = []; G.hazards = []; G.debris = []; G.zones = []; G.lightning = []; G.drones = [];
   G.boss = null; G.waveIdx = -1; G.encounter = null; G.lull = 3; G.levelDone = false; G.wind = 0; G.gustTimer = 3;
   const p = P(); p.x = 260; p.y = H / 2; p.vx = p.vy = 0; p.dead = false; p.inv = 1;
-  if (idx > 0) { p.hp = Math.max(p.hp, Math.round(p.maxHp * 0.6)); giveAmmoAll(0.5); }
+  if (idx > 0) { p.hp = Math.max(p.hp, Math.round(p.maxHp * 0.6)); }
   G.plan = buildPlan(idx); G.wpnBudget = irand(2, 3) + (has('salvage') ? 1 : 0); G.killsSinceDrop = 0;
   buildParallax(theme);
   buildAmbient(theme);
@@ -797,15 +801,16 @@ function killEnemy(e, reward) {
     const roll = Math.random();
     const dm = has('salvage') ? 2 : 1;
     if (e.elite) { dropPickup(e.x, e.y, 'health'); tryWeaponDrop(e.x + 24, e.y - 10, true); addXP(60); }
-    else if (!tryWeaponDrop(e.x, e.y, false) && has('salvage') && roll < 0.02 * dm) dropPickup(e.x, e.y, 'ammo');
+    else if (!tryWeaponDrop(e.x, e.y, false) && has('salvage') && roll < 0.004) dropPickup(e.x, e.y, 'health');
   }
 }
-function dropPickup(x, y, kind, wid) { G.pickups.push({ x, y, kind, wid, vx: -40, vy: rand(-30, 30), t: kind === 'weapon' ? 16 : 14, bob: rand(TAU) }); }
+function dropPickup(x, y, kind, wid) { if (kind === 'ammo') kind = 'health'; G.pickups.push({ x, y, kind, wid, vx: -40, vy: rand(-30, 30), t: kind === 'weapon' ? 16 : 14, bob: rand(TAU) }); }
 // weighted random weapon powerup; heavier weapons more common as levels climb, owned weapons slightly less likely
 function rollWeapon() {
   const L = G.levelIdx, p = P();
   const w = { laser: 30, plasma: 24, grenade: 16 + L * 2, rail: 10 + L * 2, beam: 8 + L * 2 };
-  for (const id in w) if (p.weapons[id]) w[id] *= 0.6;
+  if (p.pw && w[p.pw]) w[p.pw] *= 0.5;
+  if (has('artillery')) { w.grenade *= 2; w.rail *= 2; w.beam *= 2; }
   let total = 0; for (const id in w) total += w[id];
   let r = Math.random() * total; for (const id in w) { r -= w[id]; if (r <= 0) return id; }
   return 'laser';
@@ -880,7 +885,7 @@ function killBoss() {
   addText(b.x, b.y - 100, '+' + b.xp + ' XP', '#ffd36b', true);
   for (let i = 0; i < 12; i++) setTimeout(() => { if (G) { spawnExplosion(b.x + rand(-80, 80), b.y + rand(-50, 50), rand(30, 70), '#ff8844'); Audio.sfx.boom(); G.shake = 12; } }, i * 120);
   setTimeout(() => { if (G) { Audio.sfx.bigboom(); G.shake = 30; } }, 1400);
-  dropPickup(b.x - 100, b.y, 'health'); dropPickup(b.x - 60, b.y - 20, 'weapon', rollWeapon()); dropPickup(b.x - 20, b.y + 20, 'ammo');
+  dropPickup(b.x - 100, b.y, 'health'); dropPickup(b.x - 60, b.y - 20, 'weapon', rollWeapon()); dropPickup(b.x - 20, b.y + 20, 'health');
   G.ebullets = [];
   b.dying = 1.6;
   Music.play('level' + (G.levelIdx % 3));
@@ -922,7 +927,7 @@ function nextEncounter() {
   }
   // weapons are powerups now: a guaranteed one drifts in on wave 2 of the first level, then it's all drops
   if (G.waveIdx === 1 && L === 0) G.pickups.push({ x: W + 30, y: rand(150, H - 150), kind: 'weapon', wid: rollWeapon(), vx: -90, vy: 0, t: 30, bob: rand(TAU) });
-  else if (G.waveIdx === 1 && L >= 1) giveAmmoAll(0.5);
+
 }
 function updateEncounter(dt) {
   const enc = G.encounter;
@@ -943,14 +948,13 @@ function updateEncounter(dt) {
   } else if (enc.type === 'collect') {
     // spawn crates spaced out
     if (enc.crateSpawned < enc.cratesLeft && enc.t > enc.crateSpawned * (enc.dur / (enc.cratesLeft + 1))) { enc.crateSpawned++; G.pickups.push({ x: W + 30, y: rand(90, H - 90), kind: 'crate', vx: -110, vy: 0, t: 30, bob: rand(TAU) }); }
-    if (enc.collected >= enc.cratesLeft) { complete = true; addXP(100); addText(P().x, P().y - 40, 'OBJECTIVE COMPLETE +100 XP', '#6bff8f', true); giveAmmoAll(0.5); }
+    if (enc.collected >= enc.cratesLeft) { complete = true; addXP(100); addText(P().x, P().y - 40, 'OBJECTIVE COMPLETE +100 XP', '#6bff8f', true); heal(P().maxHp * 0.15); }
     else if (enc.t >= enc.dur + 12) { complete = true; addText(P().x, P().y - 40, 'OBJECTIVE FAILED', '#ff6b6b', true); }
   } else if (enc.type === 'boss') {
     if (G.boss && G.boss.dying !== undefined) { G.boss.dying -= dt; if (G.boss.dying <= 0) { G.boss = null; G.enemies.forEach(e => killEnemy(e, false)); complete = true; G.levelDone = true; } }
   }
   if (complete) { G.encounter = null; G.lull = 3.5; if (G.levelDone) { setTimeout(() => { if (G) finishLevel(); }, 1500); } }
 }
-function giveAmmoAll(frac) { const p = P(); for (const id in p.weapons) if (id !== 'assault') p.weapons[id].ammo = Math.min(WEAPONS[id].ammo * 2, p.weapons[id].ammo + WEAPONS[id].ammo * frac); }
 function finishLevel() {
   meta.bestLevel = Math.max(meta.bestLevel, G.levelIdx + 1); saveMeta();
   if (G.levelIdx >= MAX_LEVELS - 1) { meta.wins++; saveMeta(); screen = 'victory'; }
@@ -986,7 +990,7 @@ function updatePlayer(dt) {
   if (keys.KeyD || keys.ArrowRight) ax += 1;
   if (TOUCH.active) { ax = TOUCH.ax; ay = TOUCH.ay; }
   const sp = 340 * p.speedMult;
-  const acc = 2200;
+  const acc = TOUCH.active || MOBILE.ui ? 6000 : 2200; // touch: near-instant response
   p.vx += (ax * sp - p.vx) * Math.min(1, dt * acc / sp);
   p.vy += (ay * sp - p.vy) * Math.min(1, dt * acc / sp);
   // dash
@@ -1019,32 +1023,25 @@ function updatePlayer(dt) {
   if (has('drone') && pressed.KeyR && p.droneCd <= 0) { p.droneCd = 45 * cdMult(); G.drones.push({ x: p.x - 40, y: p.y - 40, t: 10, ph: 0 }); addText(p.x, p.y - 30, 'REPAIR DRONE', '#5da8ff'); Audio.sfx.pickup(); }
   // weapon switching
   const swapTime = has('swap') ? 0.18 : 0.3;
-  for (let i = 0; i < 6; i++) if (pressed['Digit' + (i + 1)]) switchWeapon(WEAPON_ORDER[i], swapTime);
+  if (pressed.Digit1) switchWeapon('assault', swapTime);
+  for (let i = 1; i < 6; i++) if (pressed['Digit' + (i + 1)] && p.pw) switchWeapon(p.pw, swapTime);
   if (pressed.KeyQ) cycleWeapon(-1, swapTime);
   if (pressed.KeyE) cycleWeapon(1, swapTime);
   // firing (automatic)
   p.fireT -= dt;
-  const wdef = WEAPONS[p.weapon], ws = p.weapons[p.weapon];
+  const wdef = WEAPONS[p.weapon];
   const rateMult = has('rapid') ? 1 / 1.3 : 1;
   p.beamOn = false;
   if (p.swapT <= 0) {
-    if (p.weapon === 'beam') {
-      if (ws.ammo > 0) { p.beamOn = true; ws.ammo -= wdef.drain * dt; if (ws.ammo <= 0) { ws.ammo = 0; autoSwitch(); } fireBeam(dt); }
-      else autoSwitch();
-    } else if (p.weapon === 'laser') {
-      if (p.reloadT > 0) { p.reloadT -= dt; if (p.reloadT <= 0) { const take = Math.min(20, ws.ammo); ws.mag = take; ws.ammo -= take; if (take === 0) autoSwitch(); } }
-      else if (ws.mag <= 0) { if (ws.ammo > 0) { p.reloadT = wdef.reload * (has('swap') ? 0.6 : 1); Audio.sfx.reload(); } else autoSwitch(); }
-      else if (p.fireT <= 0) { p.fireT = wdef.rate * rateMult; ws.mag--; fireBullets('laser'); }
-    } else if (p.fireT <= 0) {
-      const cost = wdef.cost || 1;
-      if (ws.ammo === Infinity || ws.ammo >= cost) { p.fireT = wdef.rate * rateMult; if (ws.ammo !== Infinity) ws.ammo -= cost; fireBullets(p.weapon); }
-      else autoSwitch();
-    }
+    if (p.weapon === 'beam') { p.beamOn = true; fireBeam(dt); }
+    else if (p.fireT <= 0) { p.fireT = wdef.rate * rateMult; fireBullets(p.weapon); }
   }
+  // powerup timer
+  if (p.pw) { p.pwT -= dt; if (p.pwT <= 0) { const name = WEAPONS[p.pw].name; p.pw = null; p.pwT = 0; if (p.weapon !== 'assault') switchWeapon('assault', 0.2); addText(p.x, p.y - 30, name + ' EXPIRED', '#ff9955'); Audio.sfx.reload(); } }
 }
-function switchWeapon(id, st) { const p = P(); if (!p.weapons[id] || p.weapon === id) return; p.weapon = id; p.swapT = st; p.reloadT = 0; Audio.sfx.reload(); }
-function cycleWeapon(dir, st) { const p = P(); const owned = WEAPON_ORDER.filter(w => p.weapons[w]); let i = owned.indexOf(p.weapon); i = (i + dir + owned.length) % owned.length; switchWeapon(owned[i], st); }
-function autoSwitch() { const p = P(); addText(p.x, p.y - 30, 'OUT OF AMMO', '#ff9955'); switchWeapon('assault', 0.3); }
+const ownedWeapons = () => { const p = P(); return p.pw ? ['assault', p.pw] : ['assault']; };
+function switchWeapon(id, st) { const p = P(); if (ownedWeapons().indexOf(id) < 0 || p.weapon === id) return; p.weapon = id; p.swapT = st; Audio.sfx.reload(); }
+function cycleWeapon(dir, st) { const p = P(); const owned = ownedWeapons(); let i = owned.indexOf(p.weapon); i = (i + dir + owned.length) % owned.length; switchWeapon(owned[i], st); }
 function fireBullets(kind) {
   const p = P(); const wdef = WEAPONS[kind];
   G.stats.shots++;
@@ -1185,9 +1182,8 @@ function updateWorld(dt) {
     if (!p.dead && dist(k.x, k.y, p.x, p.y) < 22 + p.r) {
       k.t = 0; Audio.sfx.pickup(); spawnRing(k.x, k.y, '#fff', 30);
       if (k.kind === 'health') heal(p.maxHp * 0.25);
-      else if (k.kind === 'ammo') { giveAmmoAll(0.35); addText(k.x, k.y - 20, '+AMMO', '#ffd36b'); }
-      else if (k.kind === 'weapon') { const had = !!p.weapons[k.wid]; giveWeapon(k.wid, true); if (had) addText(k.x, k.y - 20, WEAPONS[k.wid].name + ' +AMMO', WEAPONS[k.wid].color); else { banner(WEAPONS[k.wid].name, WEAPONS[k.wid].color, 'WEAPON POWERUP'); Audio.sfx.unlock(); } switchWeapon(k.wid, 0.15); spawnRing(k.x, k.y, WEAPONS[k.wid].color, 60); G.whiteFlash = Math.max(G.whiteFlash, 0.12); }
-      else if (k.kind === 'crate') { const enc = G.encounter; if (enc && enc.type === 'collect') { enc.collected = (enc.collected || 0) + 1; addText(k.x, k.y - 20, 'CRATE ' + enc.collected + '/' + enc.cratesLeft, '#6bff8f'); } heal(p.maxHp * 0.08); giveAmmoAll(0.15); addXP(15); }
+      else if (k.kind === 'weapon') { giveWeapon(k.wid); spawnRing(k.x, k.y, WEAPONS[k.wid].color, 60); G.whiteFlash = Math.max(G.whiteFlash, 0.12); }
+      else if (k.kind === 'crate') { const enc = G.encounter; if (enc && enc.type === 'collect') { enc.collected = (enc.collected || 0) + 1; addText(k.x, k.y - 20, 'CRATE ' + enc.collected + '/' + enc.cratesLeft, '#6bff8f'); } heal(p.maxHp * 0.08); addXP(15); }
     }
   }
   G.pickups = G.pickups.filter(k => k.t > 0);
@@ -1469,14 +1465,13 @@ function drawHUD() {
   ctx.fillStyle = '#dfe7f5'; ctx.font = '11px monospace'; ctx.fillText(xpLine + (G.points > 0 ? '   ★ ' + G.points + ' pts [T]' : ''), 26, 70);
   if (G.points > 0 && Math.floor(G.time * 2) % 2 === 0) { ctx.fillStyle = '#ffd36b'; ctx.fillText('★ ' + G.points + ' pts [T]', 26 + ctx.measureText(xpLine + '   ').width, 70); }
   // weapon panel
-  const owned = WEAPON_ORDER.filter(w => p.weapons[w]);
+  const owned = ownedWeapons();
   ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(16, H - 20 - 26 * owned.length - 10, 250, 26 * owned.length + 10);
   owned.forEach((w, i) => {
-    const y = H - 20 - 26 * (owned.length - i) + 8; const ws = p.weapons[w]; const def = WEAPONS[w]; const cur = w === p.weapon;
+    const y = H - 20 - 26 * (owned.length - i) + 8; const def = WEAPONS[w]; const cur = w === p.weapon;
     ctx.fillStyle = cur ? def.color : 'rgba(255,255,255,0.45)'; ctx.font = (cur ? 'bold ' : '') + '12px monospace';
-    let ammo = ws.ammo === Infinity ? '∞' : Math.floor(ws.ammo);
-    if (w === 'laser') ammo = (p.reloadT > 0 && cur ? 'RELOAD' : ws.mag) + ' | ' + Math.floor(ws.ammo);
-    ctx.fillText((WEAPON_ORDER.indexOf(w) + 1) + ' ' + def.name, 24, y + 8); ctx.textAlign = 'right'; ctx.fillText(String(ammo), 256, y + 8); ctx.textAlign = 'left';
+    ctx.fillText((w === 'assault' ? '1' : '2') + ' ' + def.name, 24, y + 8);
+    if (w !== 'assault') { const f = clamp(p.pwT / p.pwMax, 0, 1); ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(160, y + 1, 96, 8); ctx.fillStyle = p.pwT < 6 && Math.floor(G.time * 6) % 2 ? '#ff5d5d' : def.color; ctx.fillRect(160, y + 1, 96 * f, 8); ctx.textAlign = 'right'; ctx.font = '10px monospace'; ctx.fillStyle = '#fff'; ctx.fillText(Math.ceil(p.pwT) + 's', 256, y + 18); ctx.textAlign = 'left'; }
     if (cur) { ctx.fillStyle = def.color; ctx.fillRect(18, y - 4, 3, 18); }
   });
   // abilities
@@ -1563,10 +1558,10 @@ function drawTouchControls() {
   if (has('weld')) defs.push({ code: 'KeyF', label: 'WELD', cd: p.weldCd, max: 60 * cdMult(), color: '#5da8ff' });
   if (has('drone')) defs.push({ code: 'KeyR', label: 'DRONE', cd: p.droneCd, max: 45 * cdMult(), color: '#5da8ff' });
   if (has('uplink')) defs.push({ code: 'KeyG', label: 'STRIKE', cd: p.strikeCd || 0, max: 90 * cdMult(), color: '#ffc44d' });
-  const owned = WEAPON_ORDER.filter(w => p.weapons[w]);
+  const owned = ownedWeapons();
   const slots = [[W - 70, H - 70], [W - 150, H - 100], [W - 90, H - 160], [W - 200, H - 190]];
   defs.forEach((d, i) => { const [x, y] = slots[i] || [W - 70 - i * 80, H - 70]; touchButtons.push({ x, y, r: 34, ...d }); });
-  if (owned.length > 1) { touchButtons.push({ x: W - 250, y: H - 50, r: 26, code: 'KeyQ', label: '◀', color: '#fff' }); touchButtons.push({ x: W - 190, y: H - 40, r: 26, code: 'KeyE', label: '▶', color: '#fff' }); }
+  if (owned.length > 1) touchButtons.push({ x: W - 250, y: H - 50, r: 28, code: 'KeyE', label: 'SWAP', color: WEAPONS[p.pw].color });
   // pause / talents top-right under score
   touchButtons.push({ x: W - 30, y: 76, r: 20, code: 'Escape', label: 'II', color: '#fff' });
   touchButtons.push({ x: W - 78, y: 76, r: 20, code: 'KeyT', label: 'T', color: G.points > 0 ? '#ffd36b' : '#fff' });
@@ -1581,7 +1576,7 @@ function drawTouchControls() {
   // virtual stick
   if (TOUCH.active) {
     ctx.beginPath(); ctx.arc(TOUCH.ox, TOUCH.oy, TOUCH.radius, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2; ctx.stroke();
-    ctx.beginPath(); ctx.arc(TOUCH.ox + TOUCH.ax * TOUCH.radius, TOUCH.oy + TOUCH.ay * TOUCH.radius, 26, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.stroke();
+    ctx.beginPath(); ctx.arc(TOUCH.ox + clamp(TOUCH.cx - TOUCH.ox, -TOUCH.radius, TOUCH.radius), TOUCH.oy + clamp(TOUCH.cy - TOUCH.oy, -TOUCH.radius, TOUCH.radius), 24, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.stroke();
   } else if (G.time < 8 && G.levelIdx === 0) { ctx.textAlign = 'center'; ctx.font = 'bold 14px monospace'; ctx.fillStyle = 'rgba(255,255,255,' + (0.5 + 0.4 * Math.sin(G.time * 4)) + ')'; ctx.fillText('TOUCH & DRAG ANYWHERE TO FLY  •  AUTO-FIRE', W / 2, H - 30); }
 }
 
@@ -1621,7 +1616,7 @@ function drawMenu(dt) {
   text('Arcade horde shooter roguelike  •  1000 levels, each harder than the last  •  How deep can you go?', W / 2, 245, '#cfd8ea', 14, 'center');
   button(W / 2 - 130, 490, 260, 54, MOBILE.ui ? 'TAP TO LAUNCH' : 'LAUNCH', () => { newRun(); }, { color: '#e0563c' });
   if (MOBILE.ui) { text('Touch & drag anywhere to fly  •  Auto-fire  •  On-screen buttons for abilities, weapons, pause & talents', W / 2, 580, '#cfd8ea', 13, 'center'); text('Best played in landscape, full screen', W / 2, 600, '#cfd8ea', 13, 'center'); }
-  else { text('WASD / Arrows: fly    Auto-fire    1-6 / Q,E: weapons    SPACE: dash    F: weld    R: drone    G: orbital strike', W / 2, 580, '#cfd8ea', 13, 'center');
+  else { text('WASD / Arrows: fly    Auto-fire    1/2 or Q,E: swap weapon    SPACE: dash    F: weld    R: drone    G: orbital strike', W / 2, 580, '#cfd8ea', 13, 'center');
   text('T: talents    ESC: pause    M: mute all    N: music on/off', W / 2, 600, '#cfd8ea', 13, 'center'); }
   text('Learn the patterns: red glow = attack incoming, blue dashes = vulnerable window', W / 2, 630, '#8fa2c4', 12, 'center');
   text('Runs: ' + meta.runs + '   Best score: ' + meta.bestScore + '   Best combo: x' + meta.bestCombo + '   Best kills: ' + meta.best + '   Deepest level: ' + meta.bestLevel + '   Wins: ' + meta.wins, W / 2, 680, '#8fa2c4', 12, 'center');
