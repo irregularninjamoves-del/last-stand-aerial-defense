@@ -41,6 +41,7 @@ window.addEventListener('resize', fitCanvas); fitCanvas();
 const SPR = (() => {
   const cache = {}, state = {};
   const FILES = { player: 'img/player.png', drone: 'img/drone.png', bomber: 'img/bomber.png', bomber_open: 'img/bomber_open.png', interceptor: 'img/interceptor.png', cannon: 'img/cannon.png', cannon_fire: 'img/cannon_fire.png', swarm: 'img/swarm.png', swarm_up: 'img/swarm_up.png', boss: 'img/boss_mothership.png', boss_armed: 'img/boss_armed.png', boss_damaged: 'img/boss_damaged.png', boss_prime: 'img/boss_prime.png', boss_prime_armed: 'img/boss_prime_armed.png', boss_prime_damaged: 'img/boss_prime_damaged.png', b_assault: 'img/b_assault.png', b_laser: 'img/b_laser.png', b_plasma: 'img/b_plasma.png', b_grenade: 'img/b_grenade.png', e_orange: 'img/e_orange.png', e_pink: 'img/e_pink.png', e_violet: 'img/e_violet.png', e_red: 'img/e_red.png', pk_health: 'img/pk_health.png', pk_laser: 'img/pk_laser.png', pk_plasma: 'img/pk_plasma.png', pk_grenade: 'img/pk_grenade.png', pk_rail: 'img/pk_rail.png', pk_beam: 'img/pk_beam.png', mine: 'img/mine.png', mine_on: 'img/mine_on.png', debris_a: 'img/debris_a.png', debris_b: 'img/debris_b.png', debris_c: 'img/debris_c.png', crate: 'img/crate.png' };
+  for (const b of ['coastal', 'urban', 'mountain', 'desert', 'orbital']) for (const l of ['far', 'mid', 'near']) FILES['bg_' + b + '_' + l] = 'img/bg_' + b + '_' + l + '.png';
   function get(id) {
     if (state[id] === 'ok') return cache[id];
     if (state[id] === undefined && FILES[id]) { state[id] = 'loading'; const im = new Image(); im.onload = () => { cache[id] = im; state[id] = 'ok'; }; im.onerror = () => { state[id] = 'missing'; }; im.src = FILES[id]; }
@@ -48,7 +49,12 @@ const SPR = (() => {
   }
   // draw sprite centered at (0,0) in the current transform, scaled so its height (in 1x units) == h; returns true if drawn
   function draw(id, h, opts = {}) { const im = get(id); if (!im) return false; const s = h / (im.height / 2); const w = im.width / 2 * s; ctx.drawImage(im, -w / 2 + (opts.ox || 0), -h / 2 + (opts.oy || 0), w, h); return true; }
-  return { get, draw, FILES };
+  // tile an image horizontally at 1:1 scale, given a scroll offset (0..img.width) and the y of its TOP edge
+  function tile(id, off, y, alpha = 1) { const im = get(id); if (!im) return false; const w = im.width; let x = -((off % w) + w) % w; ctx.globalAlpha = alpha; for (; x < W; x += w) ctx.drawImage(im, x, y); ctx.globalAlpha = 1; return true; }
+  // is the image opaque at its top-left? (far layers that carry their own sky) — cached
+  const opaque = {};
+  function isOpaque(id) { const im = get(id); if (!im) return false; if (opaque[id] !== undefined) return opaque[id]; const c = document.createElement('canvas'); c.width = 4; c.height = 4; const x = c.getContext('2d'); x.drawImage(im, 0, 0, 4, 4, 0, 0, 4, 4); const d = x.getImageData(0, 0, 1, 1).data; opaque[id] = d[3] > 250 ? 'rgb(' + d[0] + ',' + d[1] + ',' + d[2] + ')' : false; return opaque[id]; }
+  return { get, draw, tile, isOpaque, FILES };
 })();
 
 // ---------------------------------------------------------------- utils
@@ -1336,16 +1342,19 @@ function explodeGrenade(b) {
 // ============================================================================
 // DRAWING
 // ============================================================================
+function weatherTint() {
+  const w = G.weather.id;
+  if (w === 'storm' || w === 'rain') { ctx.fillStyle = w === 'storm' ? 'rgba(10,14,28,0.55)' : 'rgba(30,40,60,0.35)'; ctx.fillRect(0, 0, W, H); }
+  if (w === 'cloudy') { ctx.fillStyle = 'rgba(120,130,150,0.18)'; ctx.fillRect(0, 0, W, H); }
+  if (w === 'sand') { ctx.fillStyle = 'rgba(200,150,80,0.25)'; ctx.fillRect(0, 0, W, H); }
+}
 function drawSky() {
   const th = PX.theme, w = G.weather.id;
   const g = ctx.createLinearGradient(0, 0, 0, H);
   let c0 = th.sky[0], c1 = th.sky[1], c2 = th.sky[2];
   ctx.fillStyle = g; g.addColorStop(0, c0); g.addColorStop(0.55, c1); g.addColorStop(1, c2);
   ctx.fillRect(0, 0, W, H);
-  // weather tint
-  if (w === 'storm' || w === 'rain') { ctx.fillStyle = w === 'storm' ? 'rgba(10,14,28,0.55)' : 'rgba(30,40,60,0.35)'; ctx.fillRect(0, 0, W, H); }
-  if (w === 'cloudy') { ctx.fillStyle = 'rgba(120,130,150,0.18)'; ctx.fillRect(0, 0, W, H); }
-  if (w === 'sand') { ctx.fillStyle = 'rgba(200,150,80,0.25)'; ctx.fillRect(0, 0, W, H); }
+  weatherTint();
   // aurora on final level / story beat
   if (th.space) {
     for (const s of PX.stars) { const tw = 0.5 + 0.5 * Math.sin(G.time * 2 + s.tw); ctx.fillStyle = `rgba(255,255,255,${0.3 + 0.6 * tw})`; ctx.fillRect(s.x, s.y, s.s, s.s); }
@@ -1361,9 +1370,29 @@ function drawSky() {
   // distant explosions (background flashes)
   for (const f of G.flashes) if (f.bg) { const a = f.t / 0.35; const rg = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r * (2 - a)); rg.addColorStop(0, `rgba(255,200,120,${0.6 * a})`); rg.addColorStop(1, 'rgba(255,120,60,0)'); ctx.fillStyle = rg; ctx.fillRect(f.x - f.r * 2, f.y - f.r * 2, f.r * 4, f.r * 4); }
 }
+const BIOMES = ['coastal', 'urban', 'mountain', 'desert', 'orbital'];
 function drawParallax() {
   const th = PX.theme, per = PX.period;
   const cx = G.camX, cy = G.camY;
+  // ---- painted layers (per biome) take over when present; procedural silhouettes remain the fallback
+  const bio = BIOMES[G.levelIdx % 5];
+  const far = SPR.get('bg_' + bio + '_far'), mid = SPR.get('bg_' + bio + '_mid'), near = SPR.get('bg_' + bio + '_near');
+  if (far || mid || near) {
+    if (far) {
+      const top = H * 0.70 - cy * 0.06 - far.height;
+      const sky = SPR.isOpaque('bg_' + bio + '_far');
+      if (sky) { ctx.fillStyle = sky; ctx.fillRect(0, 0, W, Math.max(0, top + 2)); }
+      SPR.tile('bg_' + bio + '_far', G.scroll * 0.06 + cx * 0.06, top);
+      if (sky) weatherTint();
+    }
+    for (const w of G.wrecks) { const x = ((w.x - G.scroll * 0.2) % (W * 2.2) + W * 2.2) % (W * 2.2) - 200; drawWreck(x, w.y - cy * 0.15, w.s, w.rot, w.type); }
+    if (mid) SPR.tile('bg_' + bio + '_mid', G.scroll * 0.18 + cx * 0.18, H * 0.87 - cy * 0.15 - mid.height);
+    if (near) { const ny = H + 6 - cy * 0.3 - near.height; SPR.tile('bg_' + bio + '_near', G.scroll * 0.4 + cx * 0.4, ny); ctx.fillStyle = th.ground; ctx.fillRect(0, ny + near.height - 2, W, H); }
+    else { ctx.fillStyle = th.ground; ctx.fillRect(0, H - 40 - cy * 0.3, W, 60); }
+    ctx.strokeStyle = 'rgba(20,20,30,0.7)'; ctx.lineWidth = 1.5;
+    for (const b of G.birds) { const x = b.fx + b.ox, y = b.fy + b.oy - cy * 0.2; const flap = Math.sin(G.time * 8 + b.ph) * 4; ctx.beginPath(); ctx.moveTo(x - 6, y - flap); ctx.lineTo(x, y); ctx.lineTo(x + 6, y - flap); ctx.stroke(); }
+    return;
+  }
   // Layer 1: distant mountains (slowest)
   let off = (G.scroll * 0.06 + cx * 0.06) % per;
   ctx.fillStyle = th.mtn;
