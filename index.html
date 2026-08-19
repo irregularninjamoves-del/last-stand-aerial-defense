@@ -88,7 +88,14 @@ window.addEventListener('keydown', e => {
   if (!keys[e.code]) pressed[e.code] = true;
   keys[e.code] = true;
   Audio.unlock();
+  devCodeKey(e.key);
 });
+// ---- lead-designer unlock: type the secret code anywhere (or open with #dev-<code>) to toggle DEV mode → unlimited coins, no ads
+const DEV_CODE = 'irregularninja';
+let devBuf = '';
+function devCodeKey(k) { if (!k || k.length !== 1) return; devBuf = (devBuf + k.toLowerCase()).slice(-DEV_CODE.length); if (devBuf === DEV_CODE) { devBuf = ''; setDev(!meta.dev); } }
+function setDev(on) { meta.dev = !!on; saveMeta(); if (typeof Store !== 'undefined') Store.say(on ? 'DEV MODE ON — unlimited coins, no ads' : 'DEV MODE OFF', on ? '#6bff8f' : '#ff8a8a'); if (typeof Audio !== 'undefined' && Audio.sfx) (on ? Audio.sfx.milestone : Audio.sfx.reload)(); }
+const isDev = () => !!meta.dev;
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 // never leave keys stuck when focus leaves the page (alt-tab, clicking outside, tab hidden)
 const releaseAll = () => { for (const k in keys) keys[k] = false; };
@@ -494,7 +501,7 @@ const scrollSpeedFor = L => Math.min(280, 130 + L * 8);
 let G = null;               // run state
 let screen = 'menu';        // menu | play | talents | pause | levelclear | gameover | victory
 let uiButtons = [];         // clickable rects for current UI screen
-const meta = Object.assign({ best: 0, bestLevel: 0, runs: 0, wins: 0, bestScore: 0, bestCombo: 0, scrap: 0, scrapEarned: 0, coins: 0, coinsEarned: 0, premium: false, skins: { owned: {}, equipped: 'default', premiumClaimed: false }, upg: {}, ach: {}, totals: { kills: 0, bosses: 0, elites: 0, levels: 0, weapons: {} }, daily: { date: '', best: 0, runs: 0 }, history: [] }, JSON.parse(localStorage.getItem('laststand_meta') || '{}'));
+const meta = Object.assign({ dev: false, best: 0, bestLevel: 0, runs: 0, wins: 0, bestScore: 0, bestCombo: 0, scrap: 0, scrapEarned: 0, coins: 0, coinsEarned: 0, premium: false, skins: { owned: {}, equipped: 'default', premiumClaimed: false }, upg: {}, ach: {}, totals: { kills: 0, bosses: 0, elites: 0, levels: 0, weapons: {} }, daily: { date: '', best: 0, runs: 0 }, history: [] }, JSON.parse(localStorage.getItem('laststand_meta') || '{}'));
 meta.upg = Object.assign({ hull: 0, aim: 0, engine: 0, kit: 0, headstart: 0, magnet: 0, wind: 0, arsenal_grenade: 0, arsenal_rail: 0, arsenal_beam: 0 }, meta.upg || {});
 meta.skins = Object.assign({ owned: {}, equipped: 'default', premiumClaimed: false }, meta.skins || {});
 meta.totals = Object.assign({ kills: 0, bosses: 0, elites: 0, levels: 0, weapons: {} }, meta.totals || {});
@@ -583,10 +590,11 @@ const skinPrice = s => skinTier(s).price;
 const ownsSkin = id => id === 'default' || !!meta.skins.owned[id];
 const curSkin = () => ownsSkin(meta.skins.equipped) ? skinById(meta.skins.equipped) : SKINS[0];
 function equipSkin(id) { if (!ownsSkin(id)) return false; meta.skins.equipped = id; saveMeta(); Audio.sfx.unlock(); return true; }
-function buySkin(id) { const s = skinById(id); const price = skinPrice(s); if (ownsSkin(id) || meta.coins < price) return false; meta.coins -= price; meta.skins.owned[id] = true; meta.skins.equipped = id; saveMeta(); Audio.sfx.milestone(); return true; }
+function buySkin(id) { const s = skinById(id); const price = isDev() ? 0 : skinPrice(s); if (ownsSkin(id) || meta.coins < price) return false; meta.coins -= price; meta.skins.owned[id] = true; meta.skins.equipped = id; saveMeta(); Audio.sfx.milestone(); return true; }
 const premiumClaimable = s => s.tier === 'common';   // Premium's free pick is limited to the Common tier
 function claimPremiumSkin(id) { if (!meta.premium || meta.skins.premiumClaimed || ownsSkin(id) || !premiumClaimable(skinById(id))) return false; meta.skins.owned[id] = true; meta.skins.premiumClaimed = true; meta.skins.equipped = id; saveMeta(); Audio.sfx.milestone(); return true; }
 const fmtNum = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+const fmtCoins = n => isDev() ? '∞' : fmtNum(n);
 const Store = (() => {
   // one coin pack per skin tier (amounts cover that tier's price); real-money prices are display strings — the store provider charges
   const SKU = {
@@ -614,7 +622,7 @@ const Store = (() => {
 const Ads = (() => {
   let pending = null;   // { next: screen to show afterwards, t: placeholder seconds left, ext: provider-driven }
   function show(next) {
-    if (meta.premium) { screen = next; return; }
+    if (meta.premium || isDev()) { screen = next; return; }
     if (window.LS_ADS && window.LS_ADS.show) { pending = { next, t: 0, ext: true }; screen = 'ad'; try { window.LS_ADS.show(() => close()); } catch (e) { close(); } return; }
     pending = { next, t: 3, ext: false }; screen = 'ad';
   }
@@ -2085,7 +2093,7 @@ function drawMenu(dt) {
   if (overlayOpen) return;
   text('Arcade horde shooter roguelike  •  1000 levels, each harder than the last  •  How deep can you go?', W / 2, logoIm ? 278 : 245, '#cfd8ea', 14, 'center');
   button(W / 2 - 130, 466, 260, 54, MOBILE.ui ? 'TAP TO LAUNCH' : 'LAUNCH', () => { newRun(false); }, { color: '#ffb02e' });
-  button(W / 2 - 115, 528, 230, 40, (meta.premium ? '★ ' : '') + 'STORE  ◈ ' + fmtNum(meta.coins), () => { screen = 'store'; }, { color: '#8a4ad8', font: 'bold 14px' });
+  button(W / 2 - 115, 528, 230, 40, (meta.premium ? '★ ' : '') + 'STORE  ◈ ' + fmtCoins(meta.coins), () => { screen = 'store'; }, { color: '#8a4ad8', font: 'bold 14px' });
   const dailyDone = meta.daily.date === todayKey();
   button(W / 2 - 400, 476, 230, 44, 'DAILY RUN' + (dailyDone ? '  (best ' + meta.daily.best + ')' : ''), () => { newRun(true); }, { color: '#3f6fd6', font: 'bold 14px' });
   button(W / 2 + 170, 476, 230, 44, 'HANGAR  ⚙ ' + meta.scrap, () => { screen = 'hangar'; }, { color: '#b8862b', font: 'bold 14px' });
@@ -2146,7 +2154,7 @@ function drawRecords() {
 let storePage = 0;
 function drawStore(dt) {
   overlay(0.9); title('STORE', 44, '#ffd36b', 36);
-  text('◈ ' + fmtNum(meta.coins) + ' COINS', W / 2 - 200, 74, '#ffd36b', 16, 'center', true);
+  text('◈ ' + fmtCoins(meta.coins) + ' COINS' + (isDev() ? '  (DEV)' : ''), W / 2 - 200, 74, '#ffd36b', 16, 'center', true);
   text(meta.premium ? '★ PREMIUM PASS ACTIVE  •  no ads' : 'Free edition  •  ads before runs & talent screens', W / 2 + 200, 74, meta.premium ? '#6bff8f' : '#8fa2c4', 13, 'center', true);
   // ---- skins grid: 4 x 2 per page, paged
   const cols = 4, rows = 2, per = cols * rows, cw = 296, ch = 150, gap = 12, x0 = (W - cw * cols - gap * (cols - 1)) / 2, y0 = 90;
@@ -2155,7 +2163,7 @@ function drawStore(dt) {
   const freeAvail = meta.premium && !meta.skins.premiumClaimed;
   SKINS.slice(storePage * per, storePage * per + per).forEach((s, i) => {
     const col = i % cols, row = Math.floor(i / cols); const x = x0 + col * (cw + gap), y = y0 + row * (ch + gap);
-    const owned = ownsSkin(s.id), eq = curSkin().id === s.id, T = skinTier(s), price = skinPrice(s), can = meta.coins >= price;
+    const owned = ownsSkin(s.id), eq = curSkin().id === s.id, T = skinTier(s), price = skinPrice(s), can = isDev() || meta.coins >= price;
     ctx.fillStyle = eq ? 'rgba(255,211,107,0.10)' : 'rgba(255,255,255,0.05)'; ctx.fillRect(x, y, cw, ch);
     ctx.strokeStyle = eq ? '#ffd36b' : owned ? 'rgba(107,255,143,0.5)' : hexA(T.color, 0.35); ctx.lineWidth = eq ? 2 : 1.5; ctx.strokeRect(x, y, cw, ch);
     // tier tag (top-left corner)
@@ -2263,6 +2271,7 @@ function drawVictory() {
 // ============================================================================
 let last = performance.now(), acc = 0;
 const HEADLESS = location.hash === '#headless'; // test harness: rAF doesn't fire in hidden panes
+if (location.hash === '#dev-' + DEV_CODE) { setDev(true); history.replaceState(null, '', location.pathname); }
 const schedule = HEADLESS ? cb => setTimeout(() => cb(performance.now()), 16) : cb => requestAnimationFrame(cb);
 function frame(now) {
   schedule(frame);
@@ -2308,7 +2317,7 @@ function frame(now) {
   mouse.clicked = false;
   for (const k in pressed) pressed[k] = false;
   // debug hook
-  window.__LS = { G, get screen() { return screen; }, set screen(v) { screen = v; }, startLevel, spawnGroup, spawnBoss, addXP, giveWeapon, newRun, buyTalent, respec, switchWeapon, keys, pressed, MOBILE, TOUCH, meta, buyUpgrade, endRunBookkeeping, checkMissions, fireNuke, Store, Ads, SKINS, buySkin, equipSkin, claimPremiumSkin, saveMeta, get touchButtons() { return touchButtons; } };
+  window.__LS = { get G() { return G; }, get screen() { return screen; }, set screen(v) { screen = v; }, startLevel, spawnGroup, spawnBoss, addXP, giveWeapon, newRun, buyTalent, respec, switchWeapon, keys, pressed, MOBILE, TOUCH, meta, buyUpgrade, endRunBookkeeping, checkMissions, fireNuke, Store, Ads, SKINS, buySkin, equipSkin, claimPremiumSkin, saveMeta, get touchButtons() { return touchButtons; } };
 }
 schedule(frame);
 </script>
