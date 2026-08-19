@@ -239,10 +239,13 @@ const Audio = (() => {
 
 // ---------------------------------------------------------------- music ('90s jazz-fusion sequencer)
 // Dorian vamps, electric-piano comping, analog-style synth leads & pads, fingered bass, fusion drums (ride, ghost notes).
-// Tracks: title, level0..2 (rotate per level), boss.  Drop real files at music/<name>.mp3 to override any track:
-//   music/title.mp3  music/boss.mp3  music/level1.mp3  music/level2.mp3  music/level3.mp3
+// Tracks: title, level0..LEVEL_TRACKS-1 (rotate per level), boss.  Real files at music/<name>.mp3 override the synth:
+//   music/title.mp3 (Panoramic Drift)  music/boss.mp3 (Heralding the Vile)  music/level1..5.mp3 (Crystal Grid, Raga Moog, Her Arrival, K砂の影, Flanged Abyss)
+// Synth fallback only has 3 level patterns; level3+ reuse them if a file is missing.
+const LEVEL_TRACKS = 5;
 const Music = (() => {
-  const FILES = { title: 'music/title.mp3', boss: 'music/boss.mp3', level0: 'music/level1.mp3', level1: 'music/level2.mp3', level2: 'music/level3.mp3' };
+  const FILES = { title: 'music/title.mp3', boss: 'music/boss.mp3' };
+  for (let i = 0; i < LEVEL_TRACKS; i++) FILES['level' + i] = 'music/level' + (i + 1) + '.mp3';
   const fileOk = {};
   let bus = null, comp = null, delay = null, dGain = null, verb = null, vGain = null, noiseBuf = null;
   let cur = null, curName = null, el = null, timer = null, step = 0, nextT = 0, vol = 0.55, muted = false, enabled = true, wantName = null;
@@ -356,7 +359,7 @@ const Music = (() => {
   function stopSynth() { if (timer) { clearInterval(timer); timer = null; } cur = null; }
   let pendingEl = null;
   function stopFile() { if (el) { try { el.pause(); el.src = ''; } catch (e) { } el = null; } if (pendingEl) { try { pendingEl.pause(); pendingEl.src = ''; } catch (e) { } pendingEl = null; } }
-  function startSynth(name) { if (!ensure()) return; cur = TRACKS[name]; cur._lastF = 0; step = 0; nextT = Audio.ac.currentTime + 0.05; if (!timer) timer = setInterval(tick, 30); }
+  function startSynth(name) { if (!ensure()) return; cur = TRACKS[name] || (name.startsWith('level') ? TRACKS['level' + (parseInt(name.slice(5)) % 3)] : TRACKS.title); cur._lastF = 0; step = 0; nextT = Audio.ac.currentTime + 0.05; if (!timer) timer = setInterval(tick, 30); }
   function tryFile(name, onFail) {
     if (fileOk[name] === false) { if (onFail) onFail(); return; }
     if (pendingEl) { try { pendingEl.pause(); pendingEl.src = ''; } catch (e) { } pendingEl = null; }
@@ -832,7 +835,7 @@ function startLevel(idx) {
   buildParallax(theme);
   buildAmbient(theme);
   Audio.ambience(G.weather.id === 'rain' ? 'rain' : G.weather.id === 'storm' ? 'storm' : G.weather.id === 'sand' ? 'sand' : 'none');
-  Music.play('level' + (idx % 3));
+  Music.play('level' + (idx % LEVEL_TRACKS));
   banner('LEVEL ' + (idx + 1) + ': ' + theme.name, '#ffffff', theme.sub + '  •  Weather: ' + G.weather.name);
   screen = 'play';
 }
@@ -1134,7 +1137,7 @@ function killBoss() {
   dropPickup(b.x - 100, b.y, 'health'); dropPickup(b.x - 60, b.y - 20, 'weapon', rollWeapon()); dropPickup(b.x - 20, b.y + 20, 'health');
   G.ebullets = [];
   b.dying = 1.6;
-  Music.play('level' + (G.levelIdx % 3));
+  Music.play('level' + (G.levelIdx % LEVEL_TRACKS));
 }
 
 // ============================================================================
