@@ -47,6 +47,10 @@ const SPR = (() => {
   for (const id of ['rapid', 'multi', 'pierce', 'artillery', 'crit', 'explosive', 'nuke', 'autorepair', 'shield', 'weld', 'recovery', 'ablative', 'drone', 'cdr', 'hull', 'dash', 'threshold', 'heavy', 'momentum', 'armor', 'reactive', 'range', 'threat', 'lock', 'weakpoint', 'salvage', 'predict', 'uplink']) FILES['icon_' + id] = 'img/icon_' + id + '.png';
   for (const id of ['dash', 'weld', 'drone', 'strike', 'nuke', 'shield', 'react']) FILES['ab_' + id] = 'img/ab_' + id + '.png';
   for (const id of ['hull', 'aim', 'engine', 'kit', 'headstart', 'magnet', 'wind', 'arsenal_grenade', 'arsenal_rail', 'arsenal_beam']) FILES['hg_' + id] = 'img/hg_' + id + '.png';
+  // ship skins register themselves from SKINS below (img/skin_<id>.png, same framing as player.png)
+  // tinted copy of a sprite (placeholder for skins that have no art yet): multiply by color, keep original alpha — cached
+  const tints = {};
+  function tint(id, color) { const im = get(id); if (!im) return null; const k = id + '|' + color; if (tints[k]) return tints[k]; const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; const x = c.getContext('2d'); x.drawImage(im, 0, 0); x.globalCompositeOperation = 'multiply'; x.globalAlpha = 0.85; x.fillStyle = color; x.fillRect(0, 0, c.width, c.height); x.globalAlpha = 1; x.globalCompositeOperation = 'destination-in'; x.drawImage(im, 0, 0); tints[k] = c; return c; }
   // draw an icon fitted into a box (top-left x,y, size sz); returns true if drawn
   function icon(id, x, y, sz) { const im = get(id); if (!im) return false; const s = Math.min(sz / im.width, sz / im.height); const w = im.width * s, h = im.height * s; ctx.drawImage(im, x + (sz - w) / 2, y + (sz - h) / 2, w, h); return true; }
   function get(id) {
@@ -55,7 +59,7 @@ const SPR = (() => {
     return null;
   }
   // draw sprite centered at (0,0) in the current transform, scaled so its height (in 1x units) == h; returns true if drawn
-  function draw(id, h, opts = {}) { const im = get(id); if (!im) return false; const s = h / (im.height / 2); const w = im.width / 2 * s; ctx.drawImage(im, -w / 2 + (opts.ox || 0), -h / 2 + (opts.oy || 0), w, h); return true; }
+  function draw(id, h, opts = {}) { const im = typeof id === 'string' ? get(id) : id; if (!im) return false; const s = h / (im.height / 2); const w = im.width / 2 * s; ctx.drawImage(im, -w / 2 + (opts.ox || 0), -h / 2 + (opts.oy || 0), w, h); return true; }
   // tile an image horizontally at 1:1 scale, given a scroll offset (0..img.width) and the y of its TOP edge
   function tile(id, off, y, alpha = 1) { const im = get(id); if (!im) return false; const w = im.width; let x = -((off % w) + w) % w; ctx.globalAlpha = alpha; for (; x < W; x += w) ctx.drawImage(im, x, y); ctx.globalAlpha = 1; return true; }
   // is the image opaque at its top-left? (far layers that carry their own sky) — cached
@@ -63,7 +67,7 @@ const SPR = (() => {
   function isOpaque(id) { const im = get(id); if (!im) return false; if (opaque[id] !== undefined) return opaque[id]; const c = document.createElement('canvas'); c.width = 4; c.height = 4; const x = c.getContext('2d'); x.drawImage(im, 0, 0, 4, 4, 0, 0, 4, 4); const d = x.getImageData(0, 0, 1, 1).data; opaque[id] = d[3] > 250 ? 'rgb(' + d[0] + ',' + d[1] + ',' + d[2] + ')' : false; return opaque[id]; }
   const bottoms = {};
   function bottomColor(id) { const im = get(id); if (!im) return null; if (bottoms[id] !== undefined) return bottoms[id]; const c = document.createElement('canvas'); c.width = 8; c.height = 1; const x = c.getContext('2d'); x.drawImage(im, 0, im.height - 2, im.width, 1, 0, 0, 8, 1); let r = 0, g = 0, b = 0, n = 0; const d = x.getImageData(0, 0, 8, 1).data; for (let i = 0; i < 8; i++) if (d[i * 4 + 3] > 200) { r += d[i * 4]; g += d[i * 4 + 1]; b += d[i * 4 + 2]; n++; } bottoms[id] = n >= 4 ? 'rgb(' + Math.round(r / n) + ',' + Math.round(g / n) + ',' + Math.round(b / n) + ')' : null; return bottoms[id]; }
-  return { get, draw, tile, isOpaque, bottomColor, icon, FILES, missing: id => state[id] === 'missing' };
+  return { get, draw, tile, tint, isOpaque, bottomColor, icon, FILES, missing: id => state[id] === 'missing' };
 })();
 
 // ---------------------------------------------------------------- utils
@@ -487,8 +491,9 @@ const scrollSpeedFor = L => Math.min(280, 130 + L * 8);
 let G = null;               // run state
 let screen = 'menu';        // menu | play | talents | pause | levelclear | gameover | victory
 let uiButtons = [];         // clickable rects for current UI screen
-const meta = Object.assign({ best: 0, bestLevel: 0, runs: 0, wins: 0, bestScore: 0, bestCombo: 0, scrap: 0, scrapEarned: 0, upg: {}, ach: {}, totals: { kills: 0, bosses: 0, elites: 0, levels: 0, weapons: {} }, daily: { date: '', best: 0, runs: 0 }, history: [] }, JSON.parse(localStorage.getItem('laststand_meta') || '{}'));
+const meta = Object.assign({ best: 0, bestLevel: 0, runs: 0, wins: 0, bestScore: 0, bestCombo: 0, scrap: 0, scrapEarned: 0, coins: 0, coinsEarned: 0, premium: false, skins: { owned: {}, equipped: 'default', premiumClaimed: false }, upg: {}, ach: {}, totals: { kills: 0, bosses: 0, elites: 0, levels: 0, weapons: {} }, daily: { date: '', best: 0, runs: 0 }, history: [] }, JSON.parse(localStorage.getItem('laststand_meta') || '{}'));
 meta.upg = Object.assign({ hull: 0, aim: 0, engine: 0, kit: 0, headstart: 0, magnet: 0, wind: 0, arsenal_grenade: 0, arsenal_rail: 0, arsenal_beam: 0 }, meta.upg || {});
+meta.skins = Object.assign({ owned: {}, equipped: 'default', premiumClaimed: false }, meta.skins || {});
 meta.totals = Object.assign({ kills: 0, bosses: 0, elites: 0, levels: 0, weapons: {} }, meta.totals || {});
 function saveMeta() { localStorage.setItem('laststand_meta', JSON.stringify(meta)); }
 // ---- Hangar: permanent upgrades bought with SCRAP
@@ -527,14 +532,104 @@ function checkMissions() {
   for (const m of MISSIONS) if (!meta.ach[m.id] && m.prog() >= m.goal) { meta.ach[m.id] = true; meta.scrap += m.reward; meta.scrapEarned += m.reward; missionToasts.push({ m, t: 4 }); Audio.sfx.milestone(); }
   saveMeta();
 }
+// ---- Store: ship skins (bought with COINS), premium pass (no ads + 1 free skin), coin packs
+//   Coins are a separate currency from scrap: earned slowly per run (coinsForRun) or bought in packs.
+//   Real-money purchases and ads go through pluggable providers set by the host app / web wrapper:
+//     window.LS_PAY = { buy(sku, done) }   done(true) on success, done(false) on cancel/fail. skus: 'premium', 'coins400k'
+//     window.LS_ADS = { show(done) }       show an interstitial; call done() when it closes (or immediately if no fill)
+//   Without a provider: purchases show "store not connected"; ads show a short placeholder card.
+const COIN_PACK = 400000;
+// Skin tiers: price in coins. Common == one coin pack ($3.99). Premium's free pick works on any tier.
+const TIERS = {
+  stock: { name: 'STOCK', price: 0, color: '#c9d3e6' },
+  common: { name: 'COMMON', price: 399000, color: '#cfd8ea' },
+  rare: { name: 'RARE', price: 700000, color: '#5da8ff' },
+  epic: { name: 'EPIC', price: 1000000, color: '#c07dff' },
+  legendary: { name: 'LEGENDARY', price: 1500000, color: '#ffc44d' },
+};
+const SKINS = [
+  { id: 'default', name: 'Standard Issue', tier: 'stock', desc: 'Factory steel-blue livery' },
+  // common — 399k
+  { id: 'fusion_f5', name: 'Fusion F 5', tier: 'common', desc: 'Dependable multirole workhorse' },
+  { id: 'dirty_hog_3z88', name: 'Dirty Hog 3Z 88', tier: 'common', desc: 'Twin-boom brawler, built ugly' },
+  { id: 'echo_g164', name: 'Echo G 164', tier: 'common', desc: 'Rose-tinted recon interceptor' },
+  { id: 'valiant_visage', name: 'Valiant Visage Last Gen', tier: 'common', desc: 'Retired frontline veteran' },
+  { id: 'speed_cutter', name: 'Speed Cutter', tier: 'common', desc: 'Needle-thin dash racer' },
+  // rare — 700k
+  { id: 'neon_angle', name: 'Neon Angle', tier: 'rare', desc: 'Ice-white with cyan afterburners' },
+  { id: 'hornet_captains', name: "Hornet Captain's Edition", tier: 'rare', desc: 'Squadron leader gold-black' },
+  { id: 'plasma_k', name: 'Plasma K Series', tier: 'rare', desc: 'Lilac plasma-drive frame' },
+  { id: 't390_s', name: 'T-390 S', tier: 'rare', desc: 'Heavy violet strike jet' },
+  { id: 'gz303_airflyer', name: 'GZ 303 Airflyer', tier: 'rare', desc: 'Armored gunship, twin cannon' },
+  { id: 'guardian_tiger', name: 'Guardian Tiger', tier: 'rare', desc: 'Purple stealth delta' },
+  { id: 'flamingo_tech_flyer', name: 'Flamingo Tech Flyer', tier: 'rare', desc: 'Coral & gold aerobatic special' },
+  { id: 'wh507', name: 'WH 507', tier: 'rare', desc: 'Blue-white long-nose interceptor' },
+  // epic — 1M
+  { id: 'gradius_vii', name: 'Gradius VII', tier: 'epic', desc: 'Mint ornate command fighter' },
+  { id: 'sparrow_cl50', name: 'Sparrow CL 50', tier: 'epic', desc: 'Neon-lit night hunter' },
+  { id: 'chubby_es_lazykid', name: 'Chubby ES Lazykid', tier: 'epic', desc: 'Gold-plated mech gunship' },
+  // legendary — 1.5M
+  { id: 'aurelios_z', name: 'Aurelios Z', tier: 'legendary', desc: 'Crystal-hulled ace of aces' },
+  { id: 'phoenix_6_proto', name: 'Phoenix 6 Prototype', tier: 'legendary', desc: 'Born of fire, never grounded' },
+  { id: 'shadowsong', name: 'Shadowsong', tier: 'legendary', desc: 'Silent black-ops phantom' },
+];
+for (const s of SKINS) if (s.id !== 'default') SPR.FILES['skin_' + s.id] = 'img/skin_' + s.id + '.png';
+const skinById = id => SKINS.find(s => s.id === id) || SKINS[0];
+const skinTier = s => TIERS[s.tier] || TIERS.common;
+const skinPrice = s => skinTier(s).price;
+const ownsSkin = id => id === 'default' || !!meta.skins.owned[id];
+const curSkin = () => ownsSkin(meta.skins.equipped) ? skinById(meta.skins.equipped) : SKINS[0];
+function equipSkin(id) { if (!ownsSkin(id)) return false; meta.skins.equipped = id; saveMeta(); Audio.sfx.unlock(); return true; }
+function buySkin(id) { const s = skinById(id); const price = skinPrice(s); if (ownsSkin(id) || meta.coins < price) return false; meta.coins -= price; meta.skins.owned[id] = true; meta.skins.equipped = id; saveMeta(); Audio.sfx.milestone(); return true; }
+function claimPremiumSkin(id) { if (!meta.premium || meta.skins.premiumClaimed || ownsSkin(id)) return false; meta.skins.owned[id] = true; meta.skins.premiumClaimed = true; meta.skins.equipped = id; saveMeta(); Audio.sfx.milestone(); return true; }
+const fmtNum = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+const Store = (() => {
+  const SKU = { premium: { name: 'PREMIUM PASS', price: '$4.99' }, coins400k: { name: fmtNum(COIN_PACK) + ' COINS', price: '$3.99' } };
+  let note = null, busy = false;
+  function grant(sku) { if (sku === 'premium') meta.premium = true; else if (sku === 'coins400k') meta.coins += COIN_PACK; saveMeta(); }
+  function say(text, color) { note = { text, color, t: 3.5 }; }
+  function buy(sku) {
+    if (busy) return;
+    if (sku === 'premium' && meta.premium) { say('You already own the Premium Pass', '#cfd8ea'); return; }
+    if (!(window.LS_PAY && window.LS_PAY.buy)) { say('Store not connected in this build', '#ff8a8a'); return; }
+    busy = true; say('Contacting store…', '#cfd8ea');
+    try { window.LS_PAY.buy(sku, ok => { busy = false; if (ok) { grant(sku); say(SKU[sku].name + ' purchased — thank you!', '#6bff8f'); Audio.sfx.milestone(); } else say('Purchase cancelled', '#ff8a8a'); }); }
+    catch (e) { busy = false; say('Purchase failed', '#ff8a8a'); }
+  }
+  function drawNote(dt) { if (!note) return; note.t -= dt; if (note.t <= 0) { note = null; return; } const a = clamp(Math.min(note.t, 3.5 - note.t) * 2, 0, 1); ctx.globalAlpha = a; ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(W / 2 - 240, H - 112, 480, 36); text(note.text, W / 2, H - 89, note.color, 14, 'center', true); ctx.globalAlpha = 1; }
+  return { SKU, buy, grant, say, drawNote, get busy() { return busy; } };
+})();
+const Ads = (() => {
+  let pending = null;   // { next: screen to show afterwards, t: placeholder seconds left, ext: provider-driven }
+  function show(next) {
+    if (meta.premium) { screen = next; return; }
+    if (window.LS_ADS && window.LS_ADS.show) { pending = { next, t: 0, ext: true }; screen = 'ad'; try { window.LS_ADS.show(() => close()); } catch (e) { close(); } return; }
+    pending = { next, t: 3, ext: false }; screen = 'ad';
+  }
+  function close() { if (!pending) return; screen = pending.next; pending = null; }
+  function draw(dt) {
+    if (!pending) { screen = 'menu'; return; }
+    if (!pending.ext) { pending.t -= dt; if (pending.t <= 0) { close(); return; } }
+    overlay(0.88);
+    ctx.fillStyle = '#0d1424'; ctx.fillRect(W / 2 - 320, H / 2 - 190, 640, 380); ctx.strokeStyle = '#3f6fd6'; ctx.lineWidth = 2; ctx.strokeRect(W / 2 - 320, H / 2 - 190, 640, 380);
+    text('ADVERTISEMENT', W / 2, H / 2 - 160, '#8fa2c4', 12, 'center', true);
+    if (pending.ext) text('Ad is showing…', W / 2, H / 2, '#cfd8ea', 18, 'center');
+    else { text('AD PLACEHOLDER', W / 2, H / 2 - 20, '#fff', 28, 'center', true); text('(no ad provider connected — window.LS_ADS)', W / 2, H / 2 + 12, '#8fa2c4', 12, 'center'); text('Continuing in ' + Math.ceil(pending.t) + '…', W / 2, H / 2 + 60, '#ffd36b', 16, 'center', true); }
+    text('Remove ads forever with the PREMIUM PASS in the Store', W / 2, H / 2 + 160, '#ffd36b', 13, 'center');
+  }
+  return { show, close, draw, get pending() { return pending; } };
+})();
 // ---- Daily seed
 const todayKey = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 function strHash(str) { let h = 2166136261 >>> 0; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h; }
 // ---- Scrap payout at run end
 function scrapForRun() { const base = Math.round(G.score / 40 + (G.levelIdx + 1) * 40 + G.stats.bossKills * 120 + G.stats.kills * 0.05); return Math.round(base * (1 + 0.15 * upg('magnet'))); }
+// Coins (skin currency): a strong run pays a few thousand; a skin costs 399,000, so grinding one takes many runs — coin packs are the shortcut
+function coinsForRun() { return Math.round(G.score / 5 + G.stats.kills * 2 + (G.levelIdx + 1) * 150 + G.stats.bossKills * 500); }
 function endRunBookkeeping() {
   if (G.paid) return; G.paid = true;
   const earned = scrapForRun(); G.scrapEarned = earned; meta.scrap += earned; meta.scrapEarned += earned;
+  const coins = coinsForRun(); G.coinsEarned = coins; meta.coins += coins; meta.coinsEarned += coins;
   meta.totals.levels += G.levelIdx;
   meta.best = Math.max(meta.best, G.stats.kills); meta.bestLevel = Math.max(meta.bestLevel, G.levelIdx + 1); meta.bestScore = Math.max(meta.bestScore, G.score); meta.bestCombo = Math.max(meta.bestCombo, G.stats.bestCombo);
   if (G.daily) { if (meta.daily.date !== G.daily) meta.daily = { date: G.daily, best: 0, runs: 0 }; meta.daily.runs++; G.dailyBest = G.score > meta.daily.best; meta.daily.best = Math.max(meta.daily.best, G.score); }
@@ -560,6 +655,7 @@ function newRun(daily) {
   recalcPlayer(); G.player.hp = G.player.maxHp;
   meta.runs++; saveMeta();
   startLevel(0);
+  Ads.show('play');   // interstitial at the start of every run (skipped for Premium)
   if (upg('headstart')) giveWeapon(rollWeapon(), true);
 }
 
@@ -1101,7 +1197,7 @@ function finishLevel() {
   meta.bestLevel = Math.max(meta.bestLevel, G.levelIdx + 1); meta.bestCombo = Math.max(meta.bestCombo, G.stats.bestCombo); meta.bestScore = Math.max(meta.bestScore, G.score); saveMeta(); checkMissions();
   meta.bestLevel = Math.max(meta.bestLevel, G.levelIdx + 1); saveMeta();
   if (G.levelIdx >= MAX_LEVELS - 1) { meta.wins++; saveMeta(); screen = 'victory'; }
-  else { screen = 'levelclear'; }
+  else { Ads.show('levelclear'); }   // interstitial before the level-clear talent screen (skipped for Premium)
 }
 
 // hazard scripts
@@ -1589,36 +1685,40 @@ function drawPlayer() {
   if (p.railFlash > 0) { const a = p.railFlash / 0.15; ctx.strokeStyle = `rgba(209,155,255,${a})`; ctx.lineWidth = 6 * a + 1; ctx.shadowColor = '#d19bff'; ctx.shadowBlur = 16; ctx.beginPath(); ctx.moveTo(p.x + 24, p.y); ctx.lineTo(W + 20, p.y + (W - p.x) * (p.railAng || 0)); ctx.stroke(); ctx.shadowBlur = 0; }
   ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.tilt);
   if (p.inv > 0 && Math.floor(G.time * 20) % 2 === 0 && p.dashT <= 0) ctx.globalAlpha = 0.4;
-  const sprite = SPR.get('player');
+  const sprite = !!SPR.get('player');
   // exhaust (with the sprite the flame is baked in, so just add a thrust-reactive glow behind it)
   const fl = (sprite ? 6 : 18) + Math.random() * 12 * p.thrust + p.thrust * 14;
   const ex = sprite ? -34 : -22;
   const eg = ctx.createLinearGradient(ex, 0, ex - fl, 0); eg.addColorStop(0, sprite ? 'rgba(255,200,90,0.7)' : 'rgba(120,200,255,0.95)'); eg.addColorStop(0.5, 'rgba(255,180,80,0.6)'); eg.addColorStop(1, 'rgba(255,120,40,0)');
   ctx.fillStyle = eg; ctx.beginPath(); ctx.moveTo(ex, -5); ctx.lineTo(ex - fl, 0); ctx.lineTo(ex, 5); ctx.closePath(); ctx.fill();
-  if (sprite) {
-    // sprite: 48px tall in game units (~74 wide incl. flame); nose sits ~+36, gun pods ~+18..+28 below centerline
-    SPR.draw('player', 50, { ox: 4, oy: 2 });
+  const usedSprite = drawShip(curSkin());
+  if (usedSprite) {
     if (has('armor')) { ctx.strokeStyle = 'rgba(107,255,143,0.9)'; ctx.lineWidth = 2; ctx.strokeRect(-18, -12, 30, 24); }
     if (p.muzzle > 0) { p.muzzle -= 1 / 60; ctx.fillStyle = 'rgba(255,240,150,0.9)'; ctx.beginPath(); ctx.arc(14, 6, 5, 0, TAU); ctx.arc(12, 12, 5, 0, TAU); ctx.fill(); }
-    ctx.restore();
-    drawPlayerOverlays(p); return;
+  } else {
+    if (has('armor')) { ctx.strokeStyle = '#6bff8f'; ctx.lineWidth = 2; ctx.strokeRect(-16, -9, 22, 18); }
+    if (p.muzzle > 0) { p.muzzle -= 1 / 60; ctx.fillStyle = 'rgba(255,240,150,0.9)'; ctx.beginPath(); ctx.arc(24, -11, 5, 0, TAU); ctx.arc(24, 11, 5, 0, TAU); ctx.fill(); }
   }
-  // body
-  ctx.fillStyle = '#c9d3e6'; ctx.strokeStyle = '#3a4560'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(30, 0); ctx.lineTo(8, -7); ctx.lineTo(-24, -6); ctx.lineTo(-28, 0); ctx.lineTo(-24, 6); ctx.lineTo(8, 7); ctx.closePath(); ctx.fill(); ctx.stroke();
-  // wings
-  ctx.fillStyle = '#8fa2c4'; ctx.beginPath(); ctx.moveTo(6, -4); ctx.lineTo(-10, -22); ctx.lineTo(-20, -22); ctx.lineTo(-14, -4); ctx.closePath(); ctx.fill(); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(6, 4); ctx.lineTo(-10, 22); ctx.lineTo(-20, 22); ctx.lineTo(-14, 4); ctx.closePath(); ctx.fill(); ctx.stroke();
-  // tail
-  ctx.fillStyle = '#7d8fb0'; ctx.beginPath(); ctx.moveTo(-18, -4); ctx.lineTo(-30, -14); ctx.lineTo(-30, -4); ctx.closePath(); ctx.fill();
-  // canopy
-  ctx.fillStyle = '#4fd0ff'; ctx.beginPath(); ctx.ellipse(10, -1, 8, 4, 0, 0, TAU); ctx.fill();
-  // gun mounts
-  ctx.fillStyle = '#333'; ctx.fillRect(4, -13, 16, 3); ctx.fillRect(4, 10, 16, 3);
-  if (has('armor')) { ctx.strokeStyle = '#6bff8f'; ctx.lineWidth = 2; ctx.strokeRect(-16, -9, 22, 18); }
-  if (p.muzzle > 0) { p.muzzle -= 1 / 60; ctx.fillStyle = 'rgba(255,240,150,0.9)'; ctx.beginPath(); ctx.arc(24, -11, 5, 0, TAU); ctx.arc(24, 11, 5, 0, TAU); ctx.fill(); }
   ctx.restore();
   drawPlayerOverlays(p);
+}
+// Draw the player's ship (skin-aware) centered at the current transform, nose facing +x. Returns true if a sprite was used.
+// Priority: img/skin_<id>.png -> tinted player.png (placeholder while the skin's art is still loading/missing) -> vector.
+function drawShip(skin) {
+  skin = skin || SKINS[0];
+  const own = skin.id !== 'default' ? SPR.get('skin_' + skin.id) : null;
+  const tintCol = skin.id !== 'default' ? skinTier(skin).color : null;
+  const im = own || (tintCol ? SPR.tint('player', tintCol) : SPR.get('player'));
+  if (im) { SPR.draw(im, 50, { ox: 4, oy: 2 }); return true; }   // sprite: 48px tall in game units; nose ~+36, gun pods below centerline
+  const body = tintCol || '#c9d3e6', wing = tintCol ? hexA(tintCol, 0.7) : '#8fa2c4', tail = tintCol ? hexA(tintCol, 0.55) : '#7d8fb0';
+  ctx.fillStyle = body; ctx.strokeStyle = '#3a4560'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(30, 0); ctx.lineTo(8, -7); ctx.lineTo(-24, -6); ctx.lineTo(-28, 0); ctx.lineTo(-24, 6); ctx.lineTo(8, 7); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = wing; ctx.beginPath(); ctx.moveTo(6, -4); ctx.lineTo(-10, -22); ctx.lineTo(-20, -22); ctx.lineTo(-14, -4); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(6, 4); ctx.lineTo(-10, 22); ctx.lineTo(-20, 22); ctx.lineTo(-14, 4); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = tail; ctx.beginPath(); ctx.moveTo(-18, -4); ctx.lineTo(-30, -14); ctx.lineTo(-30, -4); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#4fd0ff'; ctx.beginPath(); ctx.ellipse(10, -1, 8, 4, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#333'; ctx.fillRect(4, -13, 16, 3); ctx.fillRect(4, 10, 16, 3);
+  return false;
 }
 function drawPlayerOverlays(p) {
   if (p.shieldUp) { ctx.strokeStyle = `rgba(93,168,255,${0.5 + 0.3 * Math.sin(G.time * 5)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p.x, p.y, 30, 0, TAU); ctx.stroke(); }
@@ -1959,16 +2059,16 @@ function drawMenu(dt) {
   ctx.fillStyle = '#4fd0ff'; ctx.beginPath(); ctx.ellipse(10, -1, 8, 4, 0, 0, TAU); ctx.fill();
   ctx.restore(); }
   if (!logoIm) { title('LAST STAND', 150, '#ffd36b', 72); title('AERIAL DEFENSE', 205, '#fff', 30); }
-  text('Arcade horde shooter roguelike  •  1000 levels, each harder than the last  •  How deep can you go?', W / 2, logoIm ? 278 : 245, '#cfd8ea', 14, 'center');
   if (overlayOpen) return;
-  button(W / 2 - 130, 470, 260, 54, MOBILE.ui ? 'TAP TO LAUNCH' : 'LAUNCH', () => { newRun(false); }, { color: '#ffb02e' });
+  text('Arcade horde shooter roguelike  •  1000 levels, each harder than the last  •  How deep can you go?', W / 2, logoIm ? 278 : 245, '#cfd8ea', 14, 'center');
+  button(W / 2 - 130, 466, 260, 54, MOBILE.ui ? 'TAP TO LAUNCH' : 'LAUNCH', () => { newRun(false); }, { color: '#ffb02e' });
+  button(W / 2 - 115, 528, 230, 40, (meta.premium ? '★ ' : '') + 'STORE  ◈ ' + fmtNum(meta.coins), () => { screen = 'store'; }, { color: '#8a4ad8', font: 'bold 14px' });
   const dailyDone = meta.daily.date === todayKey();
   button(W / 2 - 400, 476, 230, 44, 'DAILY RUN' + (dailyDone ? '  (best ' + meta.daily.best + ')' : ''), () => { newRun(true); }, { color: '#3f6fd6', font: 'bold 14px' });
   button(W / 2 + 170, 476, 230, 44, 'HANGAR  ⚙ ' + meta.scrap, () => { screen = 'hangar'; }, { color: '#b8862b', font: 'bold 14px' });
   const unclaimed = MISSIONS.filter(m => !meta.ach[m.id] && m.prog() >= m.goal).length; const done = MISSIONS.filter(m => meta.ach[m.id]).length;
   button(W / 2 - 400, 530, 230, 40, 'MISSIONS  ' + done + '/' + MISSIONS.length, () => { screen = 'missions'; }, { color: '#4a8a5a', font: 'bold 14px' });
   button(W / 2 + 170, 530, 230, 40, 'RECORDS', () => { screen = 'records'; }, { color: '#555', font: 'bold 14px' });
-  text('⚙ ' + meta.scrap + ' SCRAP', W / 2, 555, '#ffc44d', 14, 'center', true);
   if (MOBILE.ui && !STANDALONE) { if (IOS) text('iPhone/iPad: tap Share → "Add to Home Screen" for full screen', W / 2, 660, '#ffd36b', 12, 'center'); else if (!document.fullscreenElement) button(W - 150, 16, 134, 34, '⛶ FULL SCREEN', () => goFullscreen(), { color: '#3f6fd6', font: 'bold 12px' }); }
   if (MOBILE.ui) { text('Touch & drag anywhere to fly  •  Auto-fire  •  On-screen buttons for abilities, weapons, pause & talents', W / 2, 580, '#cfd8ea', 13, 'center'); text('Best played in landscape, full screen', W / 2, 600, '#cfd8ea', 13, 'center'); }
   else { text('WASD / Arrows: fly    Auto-fire    1/2 or Q,E: swap weapon    SPACE: dash    F: weld    R: drone    G: orbital strike    B: nuke', W / 2, 580, '#cfd8ea', 13, 'center');
@@ -2020,6 +2120,53 @@ function drawRecords() {
   (meta.history || []).forEach((h, i) => text((h.daily ? '[DAILY] ' : '') + 'Score ' + h.score + '   Lv ' + h.level + '   ' + h.kills + ' kills   ' + fmtTime(h.time), W / 2 + 60, 136 + i * 24, '#cfd8ea', 13));
   button(W / 2 - 100, H - 56, 200, 42, 'BACK', () => { screen = 'menu'; });
 }
+let storePage = 0;
+function drawStore(dt) {
+  overlay(0.9); title('STORE', 44, '#ffd36b', 36);
+  text('◈ ' + fmtNum(meta.coins) + ' COINS', W / 2 - 200, 74, '#ffd36b', 16, 'center', true);
+  text(meta.premium ? '★ PREMIUM PASS ACTIVE  •  no ads' : 'Free edition  •  ads before runs & talent screens', W / 2 + 200, 74, meta.premium ? '#6bff8f' : '#8fa2c4', 13, 'center', true);
+  // ---- skins grid: 4 x 2 per page, paged
+  const cols = 4, rows = 2, per = cols * rows, cw = 296, ch = 150, gap = 12, x0 = (W - cw * cols - gap * (cols - 1)) / 2, y0 = 90;
+  const pages = Math.ceil(SKINS.length / per); storePage = clamp(storePage, 0, pages - 1);
+  if (pressed.ArrowLeft) storePage = (storePage + pages - 1) % pages; if (pressed.ArrowRight) storePage = (storePage + 1) % pages;
+  const freeAvail = meta.premium && !meta.skins.premiumClaimed;
+  SKINS.slice(storePage * per, storePage * per + per).forEach((s, i) => {
+    const col = i % cols, row = Math.floor(i / cols); const x = x0 + col * (cw + gap), y = y0 + row * (ch + gap);
+    const owned = ownsSkin(s.id), eq = curSkin().id === s.id, T = skinTier(s), price = skinPrice(s), can = meta.coins >= price;
+    ctx.fillStyle = eq ? 'rgba(255,211,107,0.10)' : 'rgba(255,255,255,0.05)'; ctx.fillRect(x, y, cw, ch);
+    ctx.strokeStyle = eq ? '#ffd36b' : owned ? 'rgba(107,255,143,0.5)' : hexA(T.color, 0.35); ctx.lineWidth = eq ? 2 : 1.5; ctx.strokeRect(x, y, cw, ch);
+    // tier tag (top-left corner)
+    ctx.fillStyle = hexA(T.color, 0.22); ctx.fillRect(x, y, 84, 16); text(T.name, x + 42, y + 12, T.color, 9, 'center', true);
+    // preview
+    ctx.save(); ctx.translate(x + 60, y + 78); ctx.scale(1.5, 1.5); if (!owned) ctx.globalAlpha = 0.9; drawShip(s); ctx.restore();
+    text(s.name, x + 118, y + 34, T.color, 13, 'left', true); text(s.desc, x + 118, y + 52, '#cfd8ea', 10);
+    if (eq) text('EQUIPPED', x + 118, y + 76, '#ffd36b', 12, 'left', true);
+    else if (owned) text('OWNED', x + 118, y + 76, '#6bff8f', 12, 'left', true);
+    else text('◈ ' + fmtNum(price), x + 118, y + 76, can ? '#fff' : '#8fa2c4', 12, 'left', true);
+    if (eq) { /* nothing to do */ }
+    else if (owned) button(x + cw - 116, y + ch - 42, 104, 32, 'EQUIP', () => equipSkin(s.id), { color: '#4a8ad8', font: 'bold 12px' });
+    else if (freeAvail) button(x + cw - 150, y + ch - 42, 138, 32, '★ CLAIM FREE', () => claimPremiumSkin(s.id), { color: '#4a8a5a', font: 'bold 12px' });
+    else button(x + cw - 116, y + ch - 42, 104, 32, 'BUY', () => { if (!buySkin(s.id)) Store.say('Not enough coins — earn them in runs or buy a coin pack below', '#ff8a8a'); }, { color: can ? '#b8862b' : '#555', font: 'bold 12px', disabled: !can });
+  });
+  // page nav
+  const ny = y0 + rows * (ch + gap) + 2;
+  button(W / 2 - 150, ny, 44, 28, '◀', () => { storePage = (storePage + pages - 1) % pages; }, { color: '#4a8ad8', font: 'bold 14px' });
+  text('PAGE ' + (storePage + 1) + ' / ' + pages + '   •   ' + SKINS.length + ' skins', W / 2, ny + 19, '#cfd8ea', 12, 'center', true);
+  button(W / 2 + 106, ny, 44, 28, '▶', () => { storePage = (storePage + 1) % pages; }, { color: '#4a8ad8', font: 'bold 14px' });
+  // ---- real-money offers
+  const oy = ny + 40, ow = 460, oh = 92, ox1 = W / 2 - ow - 10, ox2 = W / 2 + 10;
+  ctx.fillStyle = 'rgba(107,255,143,0.07)'; ctx.fillRect(ox1, oy, ow, oh); ctx.strokeStyle = meta.premium ? '#6bff8f' : 'rgba(107,255,143,0.5)'; ctx.lineWidth = 1.5; ctx.strokeRect(ox1, oy, ow, oh);
+  text('★ PREMIUM PASS', ox1 + 16, oy + 26, '#6bff8f', 16, 'left', true); text('No ads, ever  •  pick any ONE skin free', ox1 + 16, oy + 48, '#cfd8ea', 11);
+  text(meta.premium ? (meta.skins.premiumClaimed ? 'Free skin claimed' : 'Free skin waiting — tap CLAIM FREE on a skin above') : 'One-time purchase', ox1 + 16, oy + 70, meta.premium ? '#ffd36b' : '#8fa2c4', 11);
+  if (meta.premium) text('OWNED', ox1 + ow - 70, oy + 52, '#6bff8f', 14, 'center', true);
+  else button(ox1 + ow - 130, oy + 28, 116, 38, Store.SKU.premium.price, () => Store.buy('premium'), { color: '#4a8a5a', font: 'bold 15px', disabled: Store.busy });
+  ctx.fillStyle = 'rgba(255,211,107,0.07)'; ctx.fillRect(ox2, oy, ow, oh); ctx.strokeStyle = 'rgba(255,211,107,0.5)'; ctx.strokeRect(ox2, oy, ow, oh);
+  text('◈ COIN PACK', ox2 + 16, oy + 26, '#ffd36b', 16, 'left', true); text(fmtNum(COIN_PACK) + ' coins — enough for a COMMON skin', ox2 + 16, oy + 48, '#cfd8ea', 11);
+  text('Coins are also earned at the end of every run', ox2 + 16, oy + 70, '#8fa2c4', 11);
+  button(ox2 + ow - 130, oy + 28, 116, 38, Store.SKU.coins400k.price, () => Store.buy('coins400k'), { color: '#b8862b', font: 'bold 15px', disabled: Store.busy });
+  Store.drawNote(dt);
+  button(W / 2 - 100, H - 56, 200, 42, 'BACK', () => { screen = 'menu'; });
+}
 function drawTalents(fromLevelClear) {
   overlay(0.86);
   title(fromLevelClear ? 'LEVEL ' + (G.levelIdx + 1) + ' CLEAR' + (G.stageGain ? '   +' + G.stageGain + ' STAT POINT' + (G.stageGain > 1 ? 'S' : '') : '') : 'TALENTS', 50, '#ffd36b', 36);
@@ -2063,11 +2210,12 @@ function drawGameOver() {
   const s = G.stats; text('Reached Level ' + (G.levelIdx + 1) + ' — Wave ' + (G.waveIdx + 1) + '   •   Player level ' + G.level + '   •   ' + fmtTime(G.time) + '   •   Best combo x' + s.bestCombo, W / 2, 265, '#fff', 16, 'center');
   text('Kills ' + s.kills + '   Bosses ' + s.bossKills + '   Damage dealt ' + Math.round(s.damage) + '   Damage taken ' + Math.round(s.taken) + '   Shots ' + s.shots, W / 2, 290, '#cfd8ea', 14, 'center');
   text('Talents: ' + (Object.keys(G.talents).length ? Object.keys(G.talents).map(id => { for (const tr of TREE_ORDER) { const t = TREES[tr].talents.find(t => t.id === id); if (t) return t.name; } }).join(', ') : 'none'), W / 2, 320, '#8fa2c4', 12, 'center');
-  ctx.fillStyle = 'rgba(255,196,77,0.12)'; ctx.fillRect(W / 2 - 260, 345, 520, 40); ctx.strokeStyle = '#ffc44d'; ctx.lineWidth = 1.5; ctx.strokeRect(W / 2 - 260, 345, 520, 40);
-  text('+' + (G.scrapEarned || 0) + ' SCRAP EARNED   •   ⚙ ' + meta.scrap + ' total' + (G.daily ? (G.dailyBest ? '   •   ★ DAILY BEST' : '   •   daily best ' + meta.daily.best) : ''), W / 2, 370, '#ffc44d', 15, 'center', true);
-  button(W / 2 - 230, 410, 220, 50, G.daily ? 'DAILY AGAIN' : 'NEW RUN', () => newRun(!!G.daily), { color: '#ffb02e' });
-  button(W / 2 + 10, 410, 220, 50, 'HANGAR  ⚙ ' + meta.scrap, () => { screen = 'hangar'; }, { color: '#b8862b' });
-  button(W / 2 - 110, 475, 220, 44, 'MAIN MENU', () => { screen = 'menu'; G = null; menuBiome = null; });
+  ctx.fillStyle = 'rgba(255,196,77,0.12)'; ctx.fillRect(W / 2 - 260, 345, 520, 60); ctx.strokeStyle = '#ffc44d'; ctx.lineWidth = 1.5; ctx.strokeRect(W / 2 - 260, 345, 520, 60);
+  text('+' + (G.scrapEarned || 0) + ' SCRAP EARNED   •   ⚙ ' + meta.scrap + ' total' + (G.daily ? (G.dailyBest ? '   •   ★ DAILY BEST' : '   •   daily best ' + meta.daily.best) : ''), W / 2, 368, '#ffc44d', 15, 'center', true);
+  text('+' + fmtNum(G.coinsEarned || 0) + ' COINS   •   ◈ ' + fmtNum(meta.coins) + ' total   •   spend on skins in the STORE', W / 2, 392, '#ffd36b', 13, 'center', true);
+  button(W / 2 - 230, 420, 220, 50, G.daily ? 'DAILY AGAIN' : 'NEW RUN', () => newRun(!!G.daily), { color: '#ffb02e' });
+  button(W / 2 + 10, 420, 220, 50, 'HANGAR  ⚙ ' + meta.scrap, () => { screen = 'hangar'; }, { color: '#b8862b' });
+  button(W / 2 - 110, 485, 220, 44, 'MAIN MENU', () => { screen = 'menu'; G = null; menuBiome = null; });
   drawMissionToasts();
 }
 function drawVictory() {
@@ -2076,6 +2224,7 @@ function drawVictory() {
   const s = G.stats; text('Time ' + fmtTime(G.time) + '   Player level ' + G.level + '   Kills ' + s.kills + '   Damage dealt ' + Math.round(s.damage) + '   Damage taken ' + Math.round(s.taken), W / 2, 280, '#cfd8ea', 14, 'center');
   endRunBookkeeping();
   text('+' + (G.scrapEarned || 0) + ' SCRAP EARNED', W / 2, 320, '#ffc44d', 15, 'center', true);
+  text('+' + fmtNum(G.coinsEarned || 0) + ' COINS   •   ◈ ' + fmtNum(meta.coins) + ' total', W / 2, 344, '#ffd36b', 13, 'center', true);
   button(W / 2 - 110, 400, 220, 50, 'NEW RUN', () => newRun(false), { color: '#ffb02e' });
   button(W / 2 - 110, 465, 220, 44, 'MAIN MENU', () => { screen = 'menu'; G = null; });
 }
@@ -2095,7 +2244,7 @@ function frame(now) {
   if (pressed.KeyN) { Music.toggle(); }
   if (pressed.FullScreen) goFullscreen();
   Music.poke();
-  if (screen === 'menu' || screen === 'gameover' || screen === 'victory' || screen === 'hangar' || screen === 'missions' || screen === 'records') Music.play('title');
+  if (screen === 'menu' || screen === 'gameover' || screen === 'victory' || screen === 'hangar' || screen === 'missions' || screen === 'records' || screen === 'store') Music.play('title');
   if (screen === 'play') {
     if (pressed.Escape || pressed.KeyP) screen = 'pause';
     else if (pressed.KeyT) screen = 'talents';
@@ -2117,6 +2266,8 @@ function frame(now) {
   } else if (screen === 'hangar') { drawMenu(dt); drawHangar(); if (pressed.Escape) screen = 'menu'; }
   else if (screen === 'missions') { drawMenu(dt); drawMissions(); if (pressed.Escape) screen = 'menu'; }
   else if (screen === 'records') { drawMenu(dt); drawRecords(); if (pressed.Escape) screen = 'menu'; }
+  else if (screen === 'store') { drawMenu(dt); drawStore(dt); if (pressed.Escape) screen = 'menu'; }
+  else if (screen === 'ad') { if (G) drawGame(); else drawMenu(dt); Ads.draw(dt); }
   else {
     drawMenu(dt);
     if (pressed.Enter) newRun(false);
@@ -2128,7 +2279,7 @@ function frame(now) {
   mouse.clicked = false;
   for (const k in pressed) pressed[k] = false;
   // debug hook
-  window.__LS = { G, get screen() { return screen; }, set screen(v) { screen = v; }, startLevel, spawnGroup, spawnBoss, addXP, giveWeapon, newRun, buyTalent, respec, switchWeapon, keys, pressed, MOBILE, TOUCH, meta, buyUpgrade, endRunBookkeeping, checkMissions, fireNuke, get touchButtons() { return touchButtons; } };
+  window.__LS = { G, get screen() { return screen; }, set screen(v) { screen = v; }, startLevel, spawnGroup, spawnBoss, addXP, giveWeapon, newRun, buyTalent, respec, switchWeapon, keys, pressed, MOBILE, TOUCH, meta, buyUpgrade, endRunBookkeeping, checkMissions, fireNuke, Store, Ads, SKINS, buySkin, equipSkin, claimPremiumSkin, saveMeta, get touchButtons() { return touchButtons; } };
 }
 schedule(frame);
 </script>
