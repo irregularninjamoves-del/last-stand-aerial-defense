@@ -2201,7 +2201,6 @@ function drawMenu(dt) {
   ctx.restore(); }
   if (!logoIm) { title('LAST STAND', 150, '#ffd36b', 72); title('AERIAL DEFENSE', 205, '#fff', 30); }
   if (overlayOpen) return;
-  text('Arcade horde shooter roguelike  •  1000 levels, each harder than the last  •  How deep can you go?', W / 2, logoIm ? 278 : 245, '#cfd8ea', 14, 'center');
   button(W / 2 - 130, 466, 260, 54, MOBILE.ui ? 'TAP TO LAUNCH' : 'LAUNCH', () => { if (!meta.introSeen) startIntro('run'); else newRun(false); }, { color: '#ffb02e' });
   const topY = MOBILE.ui && !STANDALONE && !IOS && !document.fullscreenElement ? 58 : 16;
   button(W - 150, topY, 134, 34, 'STORY', () => startIntro('menu'), { color: '#3f6fd6', font: 'bold 12px' });
@@ -2214,11 +2213,6 @@ function drawMenu(dt) {
   button(W / 2 - 400, 530, 230, 40, 'MISSIONS  ' + done + '/' + MISSIONS.length, () => { screen = 'missions'; }, { color: '#4a8a5a', font: 'bold 14px' });
   button(W / 2 + 170, 530, 230, 40, 'RECORDS', () => { screen = 'records'; }, { color: '#555', font: 'bold 14px' });
   if (MOBILE.ui && !STANDALONE) { if (IOS) text('iPhone/iPad: tap Share → "Add to Home Screen" for full screen', W / 2, 660, '#ffd36b', 12, 'center'); else if (!document.fullscreenElement) button(W - 150, 16, 134, 34, '⛶ FULL SCREEN', () => goFullscreen(), { color: '#3f6fd6', font: 'bold 12px' }); }
-  if (MOBILE.ui) { text('Touch & drag anywhere to fly  •  Auto-fire  •  On-screen buttons for abilities, weapons, pause & talents', W / 2, 580, '#cfd8ea', 13, 'center'); text('Best played in landscape, full screen', W / 2, 600, '#cfd8ea', 13, 'center'); }
-  else { text('WASD / Arrows: fly    Auto-fire    1/2 or Q,E: swap weapon    SPACE: dash    F: weld    R: drone    G: orbital strike    B: nuke', W / 2, 580, '#cfd8ea', 13, 'center');
-  text('T: talents    ESC: pause    M: mute all    N: music on/off', W / 2, 600, '#cfd8ea', 13, 'center'); }
-  text('Learn the patterns: red glow = attack incoming, blue dashes = vulnerable window', W / 2, 630, '#8fa2c4', 12, 'center');
-  text('Runs: ' + meta.runs + '   Best score: ' + meta.bestScore + '   Best combo: x' + meta.bestCombo + '   Deepest level: ' + meta.bestLevel + '   Total kills: ' + meta.totals.kills, W / 2, 680, '#8fa2c4', 12, 'center');
   drawMissionToasts();
 }
 function toast(title, sub, color) { missionToasts.push({ title, sub, color, t: 4 }); }
