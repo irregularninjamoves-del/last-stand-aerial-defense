@@ -625,7 +625,7 @@ const Ads = (() => {
   function show(next) {
     if (meta.premium || isDev()) { screen = next; return; }
     if (window.LS_ADS && window.LS_ADS.show) { pending = { next, t: 0, ext: true }; screen = 'ad'; try { window.LS_ADS.show(() => close()); } catch (e) { close(); } return; }
-    pending = { next, t: 3, ext: false }; screen = 'ad';
+    pending = { next, t: 30, ext: false }; screen = 'ad';   // simulated interstitial: 30s
   }
   function close() { if (!pending) return; screen = pending.next; pending = null; }
   function draw(dt) {
