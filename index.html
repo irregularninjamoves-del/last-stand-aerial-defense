@@ -102,7 +102,8 @@ const releaseAll = () => { for (const k in keys) keys[k] = false; };
 window.addEventListener('blur', releaseAll);
 document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
 canvas.tabIndex = 0; canvas.style.outline = 'none';
-canvas.addEventListener('pointerdown', () => canvas.focus());
+let anyTap = false;
+canvas.addEventListener('pointerdown', () => { canvas.focus(); anyTap = true; });
 window.addEventListener('load', () => canvas.focus());
 function canvasPos(e) { const r = canvas.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; }
 canvas.addEventListener('mousemove', e => { const p = canvasPos(e); mouse.x = p.x; mouse.y = p.y; });
@@ -657,6 +658,52 @@ function endRunBookkeeping() {
   saveMeta(); checkMissions();
 }
 
+// ---- TUTORIAL: replayable guided flight; pays TUTORIAL_COINS on the FIRST completion only
+const TUTORIAL_COINS = 1000;
+const TUT_STEPS = [
+  { id: 'move', title: 'FLIGHT CONTROLS', text: () => MOBILE.ui ? 'Touch and drag anywhere to fly. Move around a bit.' : 'WASD or ARROW KEYS to fly. Move around a bit.' },
+  { id: 'shoot', title: 'AUTO-FIRE', text: () => 'Your rifles fire on their own - just point your nose. Take out the scout drones.' },
+  { id: 'weapon', title: 'WEAPON POWERUPS', text: () => 'Grab the glowing capsule. Powerups are timed - ' + (MOBILE.ui ? 'tap the weapon button' : 'press 1 / 2 (or Q / E)') + ' to swap between it and your rifles.' },
+  { id: 'nuke', title: 'TACTICAL NUKE', text: () => 'You bank one nuke every level. ' + (MOBILE.ui ? 'Tap NUKE' : 'Press B') + ' to wipe the screen when the horde closes in.' },
+  { id: 'boss', title: 'READ THE PATTERNS', text: () => 'RED GLOW = attack incoming, get out of the lane. BLUE DASHES = it is vulnerable, pour it on. Down this Hive scout.' },
+  { id: 'talents', title: 'TALENTS', text: () => 'Clearing levels earns stat points - spend them ' + (MOBILE.ui ? 'in the TALENTS button' : 'with T') + '. Open the tree, then close it to finish.' },
+];
+function startTutorial() {
+  newRun(false); G.tutorial = { step: 0, t: 0, moved: 0, done: false, hold: 0 };
+  G.plan = []; G.encounter = null; G.lull = 1e9; G.enemies = []; G.pickups = []; G.nukes = 0; G.player.pw = null; G.player.pwT = 0; G.player.weapon = 'assault';
+  meta.runs--; saveMeta();               // tutorial runs don't count as attempts
+  banner('TUTORIAL', '#6bff8f', meta.tutorialDone ? 'Refresher flight' : 'Learn the ropes  -  ' + TUTORIAL_COINS + ' coins on first completion');
+}
+function tutAdvance() {
+  const T = G.tutorial; T.step++; T.t = 0; T.hold = 0; T.armed = false; Audio.sfx.levelup(); spawnRing(P().x, P().y, '#6bff8f', 90);
+  if (T.step >= TUT_STEPS.length) {
+    T.done = true; T.doneT = 0; T.paid = !meta.tutorialDone;
+    if (T.paid) { meta.coins += TUTORIAL_COINS; meta.coinsEarned += TUTORIAL_COINS; meta.tutorialDone = true; }
+    meta.tutorials = (meta.tutorials || 0) + 1; saveMeta();
+    banner('TUTORIAL COMPLETE', '#ffd36b', T.paid ? '+' + TUTORIAL_COINS + ' COINS' : 'Refresher complete'); Audio.sfx.milestone();
+  }
+}
+function updateTutorial(dt) {
+  const T = G.tutorial, p = P(); T.t += dt;
+  if (T.done) { T.doneT += dt; if (T.doneT > 3) { const paid = T.paid; screen = 'menu'; setTimeout(() => { G = null; }, 0); toast(paid ? 'TUTORIAL COMPLETE  +' + TUTORIAL_COINS + ' COINS' : 'TUTORIAL COMPLETE', 'Replay it any time from the menu', '#ffd36b'); } return; }
+  const st = TUT_STEPS[T.step];
+  switch (st.id) {
+    case 'move': T.moved += Math.hypot(p.vx, p.vy) * dt; if (T.moved > 420 && T.t > 1.5) tutAdvance(); break;
+    case 'shoot': if (!T.armed) { T.armed = true; spawnGroup('drone', 1, 'sine'); for (const e of G.enemies) { e.hp = e.maxHp = 30; e.dmgMult = 0.4; } } else if (T.t > 1 && G.enemies.length === 0) tutAdvance(); break;
+    case 'weapon': if (!T.armed) { T.armed = true; G.pickups.push({ x: W + 30, y: p.y, kind: 'weapon', wid: 'laser', vx: -110, vy: 0, t: 60, bob: 0 }); } else if (p.pw) { T.hold += dt; if (T.hold > 2.5) tutAdvance(); } else if (G.pickups.length === 0 && T.t > 2) { T.armed = false; } break;
+    case 'nuke': if (!T.armed) { T.armed = true; G.nukes = 1; spawnGroup('swarm', 2); spawnGroup('drone', 1, 'sineB'); for (const e of G.enemies) e.dmgMult = 0.4; } else if (G.nukes <= 0 && !G.nuke) tutAdvance(); break;
+    case 'boss': if (!T.armed) { T.armed = true; spawnBoss(); const b = G.boss; if (b) { b.hp = b.maxHp = 2600; b.dmgMult = 0.4; } } else if (G.boss && G.boss.dying !== undefined) { G.boss.dying -= dt; if (G.boss.dying <= 0) { G.boss = null; tutAdvance(); } } else if (!G.boss && T.t > 3) { T.armed = false; } break;
+    case 'talents': if (T.opened && screen === 'play') tutAdvance(); break;
+  }
+}
+function drawTutorialHUD() {
+  const T = G.tutorial; if (!T) return; const st = T.done ? null : TUT_STEPS[T.step];
+  const y = 92, w = 640, x = W / 2 - w / 2;
+  ctx.fillStyle = 'rgba(3,6,14,0.78)'; ctx.fillRect(x, y, w, 74); ctx.strokeStyle = '#6bff8f'; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, 74);
+  if (st) { text('TUTORIAL  ' + (T.step + 1) + '/' + TUT_STEPS.length + '  -  ' + st.title, W / 2, y + 22, '#6bff8f', 14, 'center', true); wrapText(st.text(), x + 16, y + 44, w - 32, 16, '#fff', 13); }
+  else text('TUTORIAL COMPLETE' + (T.paid ? '   +' + TUTORIAL_COINS + ' COINS' : ''), W / 2, y + 44, '#ffd36b', 18, 'center', true);
+  for (let i = 0; i < TUT_STEPS.length; i++) { ctx.fillStyle = i < T.step || T.done ? '#6bff8f' : i === T.step ? '#ffd36b' : 'rgba(255,255,255,0.25)'; ctx.fillRect(x + 16 + i * 14, y + 62, 10, 4); }
+}
 function newRun(daily) {
   G = {
     daily: daily ? todayKey() : null, paid: false, scrapEarned: 0, windUsed: false, stagePts: 0, stageGain: 0,
@@ -756,7 +803,7 @@ function killPlayer() {
   const p = P(); p.dead = true;
   spawnExplosion(p.x, p.y, 70, '#ff8844'); Audio.sfx.bigboom();
   G.shake = 30;
-  setTimeout(() => { if (G && G.player.dead) { endRunBookkeeping(); screen = 'gameover'; } }, 1800);
+  setTimeout(() => { if (G && G.player.dead) { if (G.tutorial) { G = null; screen = 'menu'; toast('TUTORIAL ENDED', 'Shot down - try again any time', '#ff8a8a'); return; } endRunBookkeeping(); screen = 'gameover'; } }, 1800);
 }
 
 // XP
@@ -1381,7 +1428,7 @@ function updateWorld(dt) {
   G.time += dt;
   G.missionT = (G.missionT || 0) + dt; if (G.missionT > 5) { G.missionT = 0; meta.bestCombo = Math.max(meta.bestCombo, G.stats.bestCombo); meta.bestScore = Math.max(meta.bestScore, G.score); meta.bestLevel = Math.max(meta.bestLevel, G.levelIdx + 1); checkMissions(); }
   updateWeather(dt);
-  updateEncounter(dt);
+  if (G.tutorial) updateTutorial(dt); else updateEncounter(dt);
   updatePlayer(dt);
   // enemies
   for (const e of G.enemies) if (!e.dead) updateEnemy(e, dt);
@@ -1870,6 +1917,7 @@ function drawFX() {
 }
 function drawHUD() {
   const p = P();
+  if (G.tutorial) drawTutorialHUD();
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   // HP
   ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(16, 16, 300, 62);
@@ -2048,6 +2096,68 @@ function wrapText(str, x, y, maxW, lh, c, size) { ctx.font = size + 'px monospac
 function text(s, x, y, c = '#dfe7f5', size = 14, align = 'left', bold) { ctx.textAlign = align; ctx.font = (bold ? 'bold ' : '') + size + 'px monospace'; ctx.fillStyle = c; ctx.fillText(s, x, y); }
 
 let menuT = 0, menuBiome = null;
+// ---- STORY INTRO: a short crawl before the first launch (replayable from the menu). Any key / tap skips.
+const INTRO_LINES = [
+  ['LAST STAND', 'h'],
+  ['', ''],
+  ['They came without warning.', ''],
+  ['No demands. No terms. No name.', ''],
+  ['We only ever called them the Hive.', ''],
+  ['', ''],
+  ['The fleets fell in a week.', ''],
+  ['The cities in a month.', ''],
+  ['Then the sky itself was theirs.', ''],
+  ['', ''],
+  ['So the call went out to anyone with the will to fly.', ''],
+  ['Farmers. Students. Mechanics. Grandmothers.', ''],
+  ['Anyone who could pull a stick and squeeze a trigger.', ''],
+  ['', ''],
+  ['Most never came back.', ''],
+  ['Not one of them made a difference.', ''],
+  ['', ''],
+  ['Nobody asks your name anymore.', ''],
+  ['Names are for people who return.', ''],
+  ['', ''],
+  ['There is a plane on the runway.', ''],
+  ['Full tank. Twin rifles. One nuke.', ''],
+  ['The sky is burning.', ''],
+  ['', ''],
+  ['You climb in.', 'e'],
+  ['', ''],
+  ['How far can you make it?', 'q'],
+];
+let introT = 0, introNext = null;
+function startIntro(next) { introT = 0; introNext = next; screen = 'intro'; }
+function endIntro() { const n = introNext; introNext = null; meta.introSeen = true; saveMeta(); if (n === 'run') newRun(false); else screen = 'menu'; }
+function drawIntro(dt) {
+  introT += dt;
+  drawMenu(0);                                   // backdrop only (overlayOpen path: logo + pilot, no buttons)
+  ctx.fillStyle = 'rgba(3,6,14,0.62)'; ctx.fillRect(0, 0, W, H);
+  const speed = 46, lh = 34, startY = H + 30;
+  const scrollY = introT * speed;
+  ctx.save(); ctx.textAlign = 'center';
+  let y0 = startY - scrollY;
+  for (let i = 0; i < INTRO_LINES.length; i++) {
+    const [ln, kind] = INTRO_LINES[i]; const y = y0 + i * lh;
+    if (y < -40 || y > H + 40 || !ln) continue;
+    // fade in at the bottom, fade out toward the top; slight perspective shrink as it climbs
+    const a = clamp((H - y) / 90, 0, 1) * clamp((y - 40) / 140, 0, 1);
+    const sc = 0.82 + 0.18 * clamp(y / H, 0, 1);
+    ctx.globalAlpha = a; ctx.save(); ctx.translate(W / 2, y); ctx.scale(sc, sc);
+    if (kind === 'h') { ctx.font = '900 44px ' + UI_FONT; if ('letterSpacing' in ctx) ctx.letterSpacing = '4px'; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(5,10,25,0.95)'; ctx.lineWidth = 6; ctx.strokeText(ln, 0, 0); ctx.fillStyle = '#ffd36b'; ctx.fillText(ln, 0, 0); if ('letterSpacing' in ctx) ctx.letterSpacing = '0px'; }
+    else if (kind === 'q') { ctx.font = '900 30px ' + UI_FONT; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(5,10,25,0.95)'; ctx.lineWidth = 5; ctx.strokeText(ln, 0, 0); ctx.fillStyle = '#fff'; ctx.fillText(ln, 0, 0); }
+    else { ctx.font = (kind === 'e' ? 'bold ' : '') + '20px monospace'; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(5,10,25,0.9)'; ctx.lineWidth = 4; ctx.strokeText(ln, 0, 0); ctx.fillStyle = kind === 'e' ? '#ffd36b' : '#dfe7f5'; ctx.fillText(ln, 0, 0); }
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1; ctx.restore();
+  const lastY = y0 + (INTRO_LINES.length - 1) * lh;
+  const doneT = lastY < H * 0.42;                // last line has climbed to mid-screen → hold, then go
+  if (doneT) { introHold = (introHold || 0) + dt; } else introHold = 0;
+  text(MOBILE.ui ? 'TAP TO SKIP' : 'PRESS ANY KEY TO SKIP', W / 2, H - 22, 'rgba(207,216,234,' + (0.45 + 0.35 * Math.sin(introT * 3)) + ')', 12, 'center');
+  const anyKey = Object.keys(pressed).some(k => pressed[k]) || anyTap; anyTap = false;
+  if ((anyKey && introT > 0.6) || introHold > 2.2) endIntro();
+}
+let introHold = 0;
 function drawMenu(dt) {
   menuT += dt;
   const overlayOpen = screen !== 'menu';
@@ -2092,7 +2202,10 @@ function drawMenu(dt) {
   if (!logoIm) { title('LAST STAND', 150, '#ffd36b', 72); title('AERIAL DEFENSE', 205, '#fff', 30); }
   if (overlayOpen) return;
   text('Arcade horde shooter roguelike  •  1000 levels, each harder than the last  •  How deep can you go?', W / 2, logoIm ? 278 : 245, '#cfd8ea', 14, 'center');
-  button(W / 2 - 130, 466, 260, 54, MOBILE.ui ? 'TAP TO LAUNCH' : 'LAUNCH', () => { newRun(false); }, { color: '#ffb02e' });
+  button(W / 2 - 130, 466, 260, 54, MOBILE.ui ? 'TAP TO LAUNCH' : 'LAUNCH', () => { if (!meta.introSeen) startIntro('run'); else newRun(false); }, { color: '#ffb02e' });
+  const topY = MOBILE.ui && !STANDALONE && !IOS && !document.fullscreenElement ? 58 : 16;
+  button(W - 150, topY, 134, 34, 'STORY', () => startIntro('menu'), { color: '#3f6fd6', font: 'bold 12px' });
+  button(W - 150, topY + 40, 134, 34, meta.tutorialDone ? 'TUTORIAL' : 'TUTORIAL  +' + TUTORIAL_COINS, () => startTutorial(), { color: '#4a8a5a', font: 'bold 12px' });
   button(W / 2 - 115, 528, 230, 40, (meta.premium ? '★ ' : '') + 'STORE  ◈ ' + fmtCoins(meta.coins), () => { screen = 'store'; }, { color: '#8a4ad8', font: 'bold 14px' });
   const dailyDone = meta.daily.date === todayKey();
   button(W / 2 - 400, 476, 230, 44, 'DAILY RUN' + (dailyDone ? '  (best ' + meta.daily.best + ')' : ''), () => { newRun(true); }, { color: '#3f6fd6', font: 'bold 14px' });
@@ -2108,9 +2221,10 @@ function drawMenu(dt) {
   text('Runs: ' + meta.runs + '   Best score: ' + meta.bestScore + '   Best combo: x' + meta.bestCombo + '   Deepest level: ' + meta.bestLevel + '   Total kills: ' + meta.totals.kills, W / 2, 680, '#8fa2c4', 12, 'center');
   drawMissionToasts();
 }
+function toast(title, sub, color) { missionToasts.push({ title, sub, color, t: 4 }); }
 function drawMissionToasts() {
   const dt = 1 / 60;
-  for (let i = missionToasts.length - 1; i >= 0; i--) { const t = missionToasts[i]; t.t -= dt; if (t.t <= 0) { missionToasts.splice(i, 1); continue; } const a = clamp(Math.min(t.t, 4 - t.t) * 2, 0, 1); const y = 90 + i * 54; ctx.globalAlpha = a; ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(W / 2 - 220, y, 440, 46); ctx.strokeStyle = '#ffc44d'; ctx.lineWidth = 2; ctx.strokeRect(W / 2 - 220, y, 440, 46); text('MISSION COMPLETE: ' + t.m.name, W / 2, y + 19, '#ffc44d', 14, 'center', true); text(t.m.desc + '   +' + t.m.reward + ' scrap', W / 2, y + 36, '#fff', 11, 'center'); ctx.globalAlpha = 1; }
+  for (let i = missionToasts.length - 1; i >= 0; i--) { const t = missionToasts[i]; t.t -= dt; if (t.t <= 0) { missionToasts.splice(i, 1); continue; } const a = clamp(Math.min(t.t, 4 - t.t) * 2, 0, 1); const y = 90 + i * 54; ctx.globalAlpha = a; ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(W / 2 - 220, y, 440, 46); ctx.strokeStyle = t.color || '#ffc44d'; ctx.lineWidth = 2; ctx.strokeRect(W / 2 - 220, y, 440, 46); if (t.m) { text('MISSION COMPLETE: ' + t.m.name, W / 2, y + 19, '#ffc44d', 14, 'center', true); text(t.m.desc + '   +' + t.m.reward + ' scrap', W / 2, y + 36, '#fff', 11, 'center'); } else { text(t.title, W / 2, y + 19, t.color || '#ffc44d', 14, 'center', true); text(t.sub || '', W / 2, y + 36, '#fff', 11, 'center'); } ctx.globalAlpha = 1; }
 }
 function drawHangar() {
   overlay(0.9); title('HANGAR', 48, '#ffc44d', 36);
@@ -2272,6 +2386,9 @@ function drawVictory() {
 let last = performance.now(), acc = 0;
 const HEADLESS = location.hash === '#headless'; // test harness: rAF doesn't fire in hidden panes
 if (location.hash === '#dev-' + DEV_CODE) { setDev(true); history.replaceState(null, '', location.pathname); }
+// ---- daily login bonus: 50 coins, once per calendar day
+const DAILY_LOGIN_COINS = 50;
+if (meta.lastLogin !== todayKey()) { meta.lastLogin = todayKey(); meta.coins += DAILY_LOGIN_COINS; meta.coinsEarned += DAILY_LOGIN_COINS; meta.loginDays = (meta.loginDays || 0) + 1; saveMeta(); setTimeout(() => { toast('DAILY LOGIN BONUS  +' + DAILY_LOGIN_COINS + ' COINS', 'Day ' + meta.loginDays + '  -  come back tomorrow for more', '#6bff8f'); Audio.sfx.pickup(); }, 900); }
 const schedule = HEADLESS ? cb => setTimeout(() => cb(performance.now()), 16) : cb => requestAnimationFrame(cb);
 function frame(now) {
   schedule(frame);
@@ -2282,13 +2399,14 @@ function frame(now) {
   if (pressed.KeyN) { Music.toggle(); }
   if (pressed.FullScreen) goFullscreen();
   Music.poke();
-  if (screen === 'menu' || screen === 'gameover' || screen === 'victory' || screen === 'hangar' || screen === 'missions' || screen === 'records' || screen === 'store') Music.play('title');
+  if (screen === 'menu' || screen === 'gameover' || screen === 'victory' || screen === 'hangar' || screen === 'missions' || screen === 'records' || screen === 'store' || screen === 'intro') Music.play('title');
   if (screen === 'play') {
     if (pressed.Escape || pressed.KeyP) screen = 'pause';
     else if (pressed.KeyT) screen = 'talents';
     else { if (G.slowT > 0) { G.slowT -= dt; G.slow = Math.min(1, (G.slow || 0.18) + dt * 0.55); if (G.slowT <= 0) G.slow = 1; } updateWorld(dt * (G.slow || 1)); if (G.nuke) { /* fx timers run real-time */ } }
     if (G) drawGame();
   } else if (screen === 'talents') {
+    if (G && G.tutorial) G.tutorial.opened = true;
     if (pressed.KeyT || pressed.Escape) screen = 'play';
     drawGame(); drawTalents(false);
   } else if (screen === 'pause') {
@@ -2306,9 +2424,10 @@ function frame(now) {
   else if (screen === 'records') { drawMenu(dt); drawRecords(); if (pressed.Escape) screen = 'menu'; }
   else if (screen === 'store') { drawMenu(dt); drawStore(dt); if (pressed.Escape) screen = 'menu'; }
   else if (screen === 'ad') { if (G) drawGame(); else drawMenu(dt); Ads.draw(dt); }
+  else if (screen === 'intro') { drawIntro(dt); }
   else {
     drawMenu(dt);
-    if (pressed.Enter) newRun(false);
+    if (pressed.Enter) { if (!meta.introSeen) startIntro('run'); else newRun(false); }
   }
   // mobile: portrait warning
   if (MOBILE.ui && window.innerHeight > window.innerWidth) { ctx.fillStyle = 'rgba(3,5,12,0.9)'; ctx.fillRect(0, 0, W, H); ctx.textAlign = 'center'; ctx.font = 'bold 40px monospace'; ctx.fillStyle = '#ffd36b'; ctx.fillText('⟳ ROTATE TO LANDSCAPE', W / 2, H / 2 - 10); ctx.font = '16px monospace'; ctx.fillStyle = '#cfd8ea'; ctx.fillText('LAST STAND plays sideways', W / 2, H / 2 + 30); }
