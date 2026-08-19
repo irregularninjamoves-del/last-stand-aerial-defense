@@ -581,7 +581,8 @@ const ownsSkin = id => id === 'default' || !!meta.skins.owned[id];
 const curSkin = () => ownsSkin(meta.skins.equipped) ? skinById(meta.skins.equipped) : SKINS[0];
 function equipSkin(id) { if (!ownsSkin(id)) return false; meta.skins.equipped = id; saveMeta(); Audio.sfx.unlock(); return true; }
 function buySkin(id) { const s = skinById(id); const price = skinPrice(s); if (ownsSkin(id) || meta.coins < price) return false; meta.coins -= price; meta.skins.owned[id] = true; meta.skins.equipped = id; saveMeta(); Audio.sfx.milestone(); return true; }
-function claimPremiumSkin(id) { if (!meta.premium || meta.skins.premiumClaimed || ownsSkin(id)) return false; meta.skins.owned[id] = true; meta.skins.premiumClaimed = true; meta.skins.equipped = id; saveMeta(); Audio.sfx.milestone(); return true; }
+const premiumClaimable = s => s.tier === 'common';   // Premium's free pick is limited to the Common tier
+function claimPremiumSkin(id) { if (!meta.premium || meta.skins.premiumClaimed || ownsSkin(id) || !premiumClaimable(skinById(id))) return false; meta.skins.owned[id] = true; meta.skins.premiumClaimed = true; meta.skins.equipped = id; saveMeta(); Audio.sfx.milestone(); return true; }
 const fmtNum = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 const Store = (() => {
   const SKU = { premium: { name: 'PREMIUM PASS', price: '$4.99' }, coins400k: { name: fmtNum(COIN_PACK) + ' COINS', price: '$3.99' } };
@@ -2145,7 +2146,7 @@ function drawStore(dt) {
     else text('◈ ' + fmtNum(price), x + 118, y + 76, can ? '#fff' : '#8fa2c4', 12, 'left', true);
     if (eq) { /* nothing to do */ }
     else if (owned) button(x + cw - 116, y + ch - 42, 104, 32, 'EQUIP', () => equipSkin(s.id), { color: '#4a8ad8', font: 'bold 12px' });
-    else if (freeAvail) button(x + cw - 150, y + ch - 42, 138, 32, '★ CLAIM FREE', () => claimPremiumSkin(s.id), { color: '#4a8a5a', font: 'bold 12px' });
+    else if (freeAvail && premiumClaimable(s)) button(x + cw - 150, y + ch - 42, 138, 32, '★ CLAIM FREE', () => claimPremiumSkin(s.id), { color: '#4a8a5a', font: 'bold 12px' });
     else button(x + cw - 116, y + ch - 42, 104, 32, 'BUY', () => { if (!buySkin(s.id)) Store.say('Not enough coins — earn them in runs or buy a coin pack below', '#ff8a8a'); }, { color: can ? '#b8862b' : '#555', font: 'bold 12px', disabled: !can });
   });
   // page nav
@@ -2156,8 +2157,8 @@ function drawStore(dt) {
   // ---- real-money offers
   const oy = ny + 40, ow = 460, oh = 92, ox1 = W / 2 - ow - 10, ox2 = W / 2 + 10;
   ctx.fillStyle = 'rgba(107,255,143,0.07)'; ctx.fillRect(ox1, oy, ow, oh); ctx.strokeStyle = meta.premium ? '#6bff8f' : 'rgba(107,255,143,0.5)'; ctx.lineWidth = 1.5; ctx.strokeRect(ox1, oy, ow, oh);
-  text('★ PREMIUM PASS', ox1 + 16, oy + 26, '#6bff8f', 16, 'left', true); text('No ads, ever  •  pick any ONE skin free', ox1 + 16, oy + 48, '#cfd8ea', 11);
-  text(meta.premium ? (meta.skins.premiumClaimed ? 'Free skin claimed' : 'Free skin waiting — tap CLAIM FREE on a skin above') : 'One-time purchase', ox1 + 16, oy + 70, meta.premium ? '#ffd36b' : '#8fa2c4', 11);
+  text('★ PREMIUM PASS', ox1 + 16, oy + 26, '#6bff8f', 16, 'left', true); text('No ads, ever  •  pick any ONE Common skin free', ox1 + 16, oy + 48, '#cfd8ea', 11);
+  text(meta.premium ? (meta.skins.premiumClaimed ? 'Free skin claimed' : 'Free Common skin waiting — tap CLAIM FREE (page 1)') : 'One-time purchase', ox1 + 16, oy + 70, meta.premium ? '#ffd36b' : '#8fa2c4', 11);
   if (meta.premium) text('OWNED', ox1 + ow - 70, oy + 52, '#6bff8f', 14, 'center', true);
   else button(ox1 + ow - 130, oy + 28, 116, 38, Store.SKU.premium.price, () => Store.buy('premium'), { color: '#4a8a5a', font: 'bold 15px', disabled: Store.busy });
   ctx.fillStyle = 'rgba(255,211,107,0.07)'; ctx.fillRect(ox2, oy, ow, oh); ctx.strokeStyle = 'rgba(255,211,107,0.5)'; ctx.strokeRect(ox2, oy, ow, oh);
