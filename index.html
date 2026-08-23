@@ -888,7 +888,7 @@ function startLevel(idx) {
   if (idx > 0) { p.hp = Math.max(p.hp, Math.round(p.maxHp * 0.6)); }
   G.plan = buildPlan(idx); G.wpnBudget = irand(2, 3) + (has('salvage') ? 1 : 0); G.killsSinceDrop = 0;
   G.nukes = (G.nukes || 0) + 1 + (has('nuke') ? 1 : 0); addText(p.x, p.y - 44, 'NUKE BANKED (' + G.nukes + ')  [B]', '#ffe36b', true);
-  G.msl = 2; G.missiles = []; addText(p.x, p.y - 62, 'MISSILES LOADED (2)  [M]  •  [N] = ' + MSPEC[meta.mslSpec || 'std'].name + ' SPEC', MSPEC[meta.mslSpec || 'std'].c, true);
+  G.msl = 2; G.missiles = []; addText(p.x, p.y - 62, 'MISSILES LOADED (2)  [M]  •  ' + MSPEC[meta.mslSpec || 'std'].name + ' SPEC', MSPEC[meta.mslSpec || 'std'].c, true);
   buildParallax(theme);
   buildAmbient(theme);
   Audio.ambience(G.weather.id === 'rain' ? 'rain' : G.weather.id === 'storm' ? 'storm' : G.weather.id === 'sand' ? 'sand' : 'none');
@@ -1332,7 +1332,6 @@ function updatePlayer(dt) {
   if (has('weld') && pressed.KeyF && p.weldCd <= 0) { p.weldCd = 60 * cdMult(); heal(p.maxHp * 0.25); Audio.sfx.weld(); spawnRing(p.x, p.y, '#5da8ff', 50); }
   if (pressed.KeyB && (G.nukes || 0) > 0 && !G.nuke) fireNuke();
   if (pressed.KeyM && (G.msl || 0) > 0) fireMissile();
-  if (pressed.KeyN) cycleMslSpec();
   if (has('uplink') && pressed.KeyG && p.strikeCd <= 0) { p.strikeCd = 90 * cdMult(); const tg = allTargets().filter(e => e.x > p.x + 60 && e.x < W + 40).sort((a, b) => (b.isBoss ? 1e9 : b.hp) - (a.isBoss ? 1e9 : a.hp))[0]; G.strikes.push({ x: clamp(tg ? tg.x : p.x + 320, 200, W - 60), w: 170, t: 0 }); addText(p.x, p.y - 30, 'ORBITAL STRIKE INBOUND', '#ffc44d', true); Audio.sfx.warn(); }
   if (has('drone') && pressed.KeyR && p.droneCd <= 0) { p.droneCd = 45 * cdMult(); G.drones.push({ x: p.x - 40, y: p.y - 40, t: 10, ph: 0 }); addText(p.x, p.y - 30, 'REPAIR DRONE', '#5da8ff'); Audio.sfx.pickup(); }
   // weapon switching
@@ -1848,7 +1847,9 @@ const MSPEC = {
 function cycleMslSpec() {
   const order = ['std', 'fire', 'ice', 'rad'];
   meta.mslSpec = order[(order.indexOf(meta.mslSpec || 'std') + 1) % order.length]; saveMeta();
-  const s = MSPEC[meta.mslSpec]; addText(P().x, P().y - 58, 'MISSILE SPEC: ' + s.name, s.c, true); Audio.sfx.reload();
+  const s = MSPEC[meta.mslSpec];
+  if (G && screen === 'play') addText(P().x, P().y - 58, 'MISSILE SPEC: ' + s.name, s.c, true);
+  Audio.sfx.reload();
 }
 function fireMissile() {
   const p = P(); if ((G.msl || 0) <= 0 || p.dead) return; G.msl--;
@@ -1872,8 +1873,20 @@ function updateMissiles(dt) {
 }
 function explodeMissile(m) {
   const R = 95, sc = MSPEC[m.spec];
-  spawnExplosion(m.x, m.y, 55, sc.c); G.fx.push({ type: 'boom', x: m.x, y: m.y, r: R, c: sc.c, t: 0.3, life: 0.3 });
-  G.shake += 9; Audio.sfx.bigboom();
+  hitStop(0.06); G.shake += 12; G.whiteFlash = Math.max(G.whiteFlash, 0.1); Audio.sfx.bigboom();
+  // layered fireball: hot white core inside a colored blast
+  G.fx.push({ type: 'boom', x: m.x, y: m.y, r: R * 1.1, c: sc.c, t: 0.42, life: 0.42 });
+  G.fx.push({ type: 'boom', x: m.x, y: m.y, r: R * 0.55, c: '#ffffff', t: 0.22, life: 0.22 });
+  // double shockwave
+  spawnRing(m.x, m.y, sc.c, R * 1.6); spawnRing(m.x, m.y, '#ffffff', R * 0.8);
+  // spark burst
+  for (let i = 0; i < 26; i++) { const a = rand(TAU), sp = rand(120, 520); G.parts.push({ x: m.x, y: m.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: rand(0.25, 0.7), c: pick(['#fff', sc.c, sc.flame]), g: 60 }); }
+  // smoke puffs
+  spawnParts(m.x, m.y, 14, '#2a2f3a', 90, 1.3, -70);
+  // spec flourish
+  if (m.spec === 'fire') { for (let i = 0; i < 14; i++) { const a = rand(TAU), sp = rand(60, 260); G.parts.push({ x: m.x, y: m.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40, t: rand(0.5, 1.1), c: pick(['#ff5d2d', '#ffb066', '#ffe36b']), g: -50 }); } }
+  else if (m.spec === 'ice') { for (let i = 0; i < 16; i++) { const a = rand(TAU), sp = rand(200, 620); G.parts.push({ x: m.x, y: m.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: rand(0.15, 0.45), c: pick(['#ffffff', '#9fe8ff', '#bfefff']), g: 130 }); } spawnRing(m.x, m.y, '#bfefff', R * 2.1); }
+  else if (m.spec === 'rad') { for (let i = 0; i < 12; i++) G.parts.push({ x: m.x + rand(-16, 16), y: m.y + rand(-6, 6), vx: rand(-30, 30), vy: -rand(40, 150), t: rand(0.8, 1.7), c: pick(['#7dff3d', '#a4ff5d', '#4dbb2a']), g: -55 }); spawnRing(m.x, m.y, '#7dff3d', R * 1.9); }
   const base = 100 * (1 + 0.03 * G.invested.assault);
   for (const e of allTargets()) if (dist(e.x, e.y, m.x, m.y) < R + e.r) {
     damageEnemy(e, e.isBoss ? base * 1.4 : base, e.x, e.y);
@@ -1905,7 +1918,7 @@ function drawMissiles() {
     ctx.fillStyle = sc.flame; ctx.globalAlpha = 0.85;
     ctx.beginPath(); ctx.moveTo(-26, -3); ctx.lineTo(-26 - rand(10, 22), 0); ctx.lineTo(-26, 3); ctx.closePath(); ctx.fill();
     ctx.globalAlpha = 1;
-    if (im) ctx.drawImage(im, -28, -11, 56, 22);
+    if (im) ctx.drawImage(im, -31, -7.5, 62, 15);
     else { ctx.fillStyle = '#cfd8ea'; ctx.fillRect(-18, -4, 32, 8); ctx.fillStyle = sc.c; ctx.beginPath(); ctx.moveTo(14, -4); ctx.lineTo(24, 0); ctx.lineTo(14, 4); ctx.closePath(); ctx.fill(); }
     ctx.restore();
   }
@@ -2114,7 +2127,6 @@ function drawTouchControls() {
   if (has('uplink')) defs.push({ code: 'KeyG', label: 'STRIKE', cd: p.strikeCd || 0, max: 90 * cdMult(), color: '#ffc44d' });
   defs.push({ code: 'KeyB', label: 'NUKE ' + (G.nukes || 0), cd: (G.nukes || 0) > 0 ? 0 : 1, max: 1, color: '#ffe36b' });
   defs.push({ code: 'KeyM', label: 'MSL ' + (G.msl || 0), cd: (G.msl || 0) > 0 ? 0 : 1, max: 1, color: MSPEC[meta.mslSpec || 'std'].c });
-  defs.push({ code: 'KeyN', label: MSPEC[meta.mslSpec || 'std'].name.slice(0, 4), cd: 0, max: 1, color: MSPEC[meta.mslSpec || 'std'].c });
   const owned = ownedWeapons();
   const slots = [[W - 70, H - 70], [W - 150, H - 100], [W - 90, H - 160], [W - 200, H - 190]];
   defs.forEach((d, i) => { const [x, y] = slots[i] || [W - 70 - i * 80, H - 70]; touchButtons.push({ x, y, r: 34, ...d }); });
@@ -2125,11 +2137,35 @@ function drawTouchControls() {
   if (!IOS && !STANDALONE && !document.fullscreenElement) touchButtons.push({ x: W - 126, y: 76, r: 20, code: 'FullScreen', label: '⛶', color: '#8fa2c4' });
   for (const b of touchButtons) {
     const held = keys[b.code];
-    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fillStyle = held ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.45)'; ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = b.color; ctx.globalAlpha = 0.85; ctx.stroke(); ctx.globalAlpha = 1;
-    if (b.max) { const f = b.cd > 0 ? clamp(1 - b.cd / b.max, 0, 1) : 1; if (f < 1) { ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.arc(b.x, b.y, b.r - 2, -Math.PI / 2, -Math.PI / 2 + TAU * f); ctx.closePath(); ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fill(); } else { ctx.beginPath(); ctx.arc(b.x, b.y, b.r - 4, 0, TAU); ctx.fillStyle = b.color; ctx.globalAlpha = 0.28; ctx.fill(); ctx.globalAlpha = 1; } }
-    ctx.fillStyle = '#fff'; ctx.font = 'bold ' + (b.r > 30 ? 12 : 16) + 'px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(b.label, b.x, b.y); ctx.textBaseline = 'alphabetic';
-    if (b.max && b.cd > 0) { ctx.font = '10px monospace'; ctx.fillStyle = '#ccc'; ctx.fillText(Math.ceil(b.cd) + 's', b.x, b.y + 15); }
+    // brushed-steel bezel
+    const bez = ctx.createRadialGradient(b.x - b.r * 0.4, b.y - b.r * 0.5, b.r * 0.2, b.x, b.y, b.r + 4);
+    bez.addColorStop(0, '#707a8c'); bez.addColorStop(0.55, '#3a4150'); bez.addColorStop(1, '#12161d');
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 4, 0, TAU); ctx.fillStyle = bez; ctx.fill();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.stroke();
+    // rivets
+    for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + Math.PI / 6; ctx.beginPath(); ctx.arc(b.x + Math.cos(a) * (b.r + 1.5), b.y + Math.sin(a) * (b.r + 1.5), 1.6, 0, TAU); ctx.fillStyle = '#0b0e13'; ctx.fill(); }
+    // hazard ring on the nuke switch
+    if (b.code === 'KeyB') { ctx.save(); ctx.setLineDash([6, 5]); ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 4, 0, TAU); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,190,40,0.85)'; ctx.stroke(); ctx.restore(); }
+    // dark glass face, lit by the button color when held
+    const face = ctx.createRadialGradient(b.x, b.y - b.r * 0.4, 2, b.x, b.y, b.r - 3);
+    face.addColorStop(0, held ? hexA(b.color, 0.55) : '#1a2130'); face.addColorStop(1, held ? hexA(b.color, 0.22) : '#0a0d14');
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r - 3, 0, TAU); ctx.fillStyle = face; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = hexA(b.color, held ? 1 : 0.75); ctx.stroke();
+    if (b.max) {
+      const f = b.cd > 0 ? clamp(1 - b.cd / b.max, 0, 1) : 1;
+      if (f < 1) { // gauge sweep while recharging
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r - 6, -Math.PI / 2, -Math.PI / 2 + TAU * f); ctx.lineWidth = 3.5; ctx.strokeStyle = hexA(b.color, 0.9); ctx.stroke();
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r - 6, -Math.PI / 2 + TAU * f, -Math.PI / 2 + TAU); ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.stroke();
+      } else { // armed: soft glow
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r - 6, 0, TAU); ctx.fillStyle = hexA(b.color, held ? 0.4 : 0.15); ctx.fill();
+        ctx.shadowColor = b.color; ctx.shadowBlur = held ? 16 : 8;
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r - 6, 0, TAU); ctx.lineWidth = 1.5; ctx.strokeStyle = hexA(b.color, 0.85); ctx.stroke(); ctx.shadowBlur = 0;
+      }
+    }
+    // glass highlight
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r - 5, -Math.PI * 0.85, -Math.PI * 0.25); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.stroke();
+    ctx.fillStyle = held ? '#fff' : '#e6ecf7'; ctx.font = 'bold ' + (b.r > 30 ? 11 : 15) + 'px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(b.label, b.x, b.y); ctx.textBaseline = 'alphabetic';
+    if (b.max && b.cd > 0) { ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#9fb0cc'; ctx.fillText(Math.ceil(b.cd) + 's', b.x, b.y + 14); }
   }
   // virtual stick
   if (TOUCH.active) {
@@ -2296,6 +2332,8 @@ function drawMenu(dt) {
   const dailyDone = meta.daily.date === todayKey();
   button(W / 2 - 400, 476, 230, 44, 'DAILY RUN' + (dailyDone ? '  (best ' + meta.daily.best + ')' : ''), () => { newRun(true); }, { color: '#3f6fd6', font: 'bold 14px' });
   button(W / 2 + 170, 476, 230, 44, 'HANGAR  ⚙ ' + meta.scrap, () => { screen = 'hangar'; }, { color: '#b8862b', font: 'bold 14px' });
+  const _ms = MSPEC[meta.mslSpec || 'std'];
+  button(W / 2 + 170, 530, 230, 40, '⌁ MISSILE SPEC: ' + _ms.name, () => cycleMslSpec(), { color: _ms.c, font: 'bold 13px' });
   const unclaimed = MISSIONS.filter(m => !meta.ach[m.id] && m.prog() >= m.goal).length; const done = MISSIONS.filter(m => meta.ach[m.id]).length;
   button(W / 2 - 400, 530, 230, 40, 'MISSIONS  ' + done + '/' + MISSIONS.length, () => { screen = 'missions'; }, { color: '#4a8a5a', font: 'bold 14px' });
   button(W / 2 + 170, 530, 230, 40, 'RECORDS', () => { screen = 'records'; }, { color: '#555', font: 'bold 14px' });
