@@ -42,7 +42,7 @@ window.addEventListener('resize', fitCanvas); fitCanvas();
 // Put PNGs in img/ (authored at 2x). SPR.get('player') returns an Image once loaded, else null -> caller draws vector.
 const SPR = (() => {
   const cache = {}, state = {};
-  const FILES = { player: 'img/player.png', drone: 'img/drone.png', bomber: 'img/bomber.png', bomber_open: 'img/bomber_open.png', interceptor: 'img/interceptor.png', cannon: 'img/cannon.png', cannon_fire: 'img/cannon_fire.png', swarm: 'img/swarm.png', swarm_up: 'img/swarm_up.png', boss: 'img/boss_mothership.png', boss_armed: 'img/boss_armed.png', boss_damaged: 'img/boss_damaged.png', boss_prime: 'img/boss_prime.png', boss_prime_armed: 'img/boss_prime_armed.png', boss_prime_damaged: 'img/boss_prime_damaged.png', b_assault: 'img/b_assault.png', b_laser: 'img/b_laser.png', b_plasma: 'img/b_plasma.png', b_grenade: 'img/b_grenade.png', e_orange: 'img/e_orange.png', e_pink: 'img/e_pink.png', e_violet: 'img/e_violet.png', e_red: 'img/e_red.png', pk_health: 'img/pk_health.png', pk_laser: 'img/pk_laser.png', pk_plasma: 'img/pk_plasma.png', pk_grenade: 'img/pk_grenade.png', pk_rail: 'img/pk_rail.png', pk_beam: 'img/pk_beam.png', mine: 'img/mine.png', mine_on: 'img/mine_on.png', debris_a: 'img/debris_a.png', debris_b: 'img/debris_b.png', debris_c: 'img/debris_c.png', crate: 'img/crate.png', logo: 'img/logo.png', hero: 'img/hero.png', pilot: 'img/pilot.png' };
+  const FILES = { player: 'img/player.png', drone: 'img/drone.png', bomber: 'img/bomber.png', bomber_open: 'img/bomber_open.png', interceptor: 'img/interceptor.png', cannon: 'img/cannon.png', cannon_fire: 'img/cannon_fire.png', swarm: 'img/swarm.png', swarm_up: 'img/swarm_up.png', boss: 'img/boss_mothership.png', boss_armed: 'img/boss_armed.png', boss_damaged: 'img/boss_damaged.png', boss_prime: 'img/boss_prime.png', boss_prime_armed: 'img/boss_prime_armed.png', boss_prime_damaged: 'img/boss_prime_damaged.png', b_assault: 'img/b_assault.png', b_laser: 'img/b_laser.png', b_plasma: 'img/b_plasma.png', b_grenade: 'img/b_grenade.png', e_orange: 'img/e_orange.png', e_pink: 'img/e_pink.png', e_violet: 'img/e_violet.png', e_red: 'img/e_red.png', pk_health: 'img/pk_health.png', pk_laser: 'img/pk_laser.png', pk_plasma: 'img/pk_plasma.png', pk_grenade: 'img/pk_grenade.png', pk_rail: 'img/pk_rail.png', pk_beam: 'img/pk_beam.png', mine: 'img/mine.png', mine_on: 'img/mine_on.png', debris_a: 'img/debris_a.png', debris_b: 'img/debris_b.png', debris_c: 'img/debris_c.png', crate: 'img/crate.png', logo: 'img/logo.png', hero: 'img/hero.png', pilot: 'img/pilot.png', missile: 'img/missile_asset.png' };
   for (const b of ['coastal', 'urban', 'mountain', 'beach', 'desert', 'orbital']) for (const l of ['far', 'mid', 'near']) FILES['bg_' + b + '_' + l] = 'img/bg_' + b + '_' + l + '.png';
   for (const id of ['rapid', 'multi', 'pierce', 'artillery', 'crit', 'explosive', 'nuke', 'autorepair', 'shield', 'weld', 'recovery', 'ablative', 'drone', 'cdr', 'hull', 'dash', 'threshold', 'heavy', 'momentum', 'armor', 'reactive', 'range', 'threat', 'lock', 'weakpoint', 'salvage', 'predict', 'uplink']) FILES['icon_' + id] = 'img/icon_' + id + '.png';
   for (const id of ['dash', 'weld', 'drone', 'strike', 'nuke', 'shield', 'react']) FILES['ab_' + id] = 'img/ab_' + id + '.png';
@@ -716,7 +716,7 @@ function newRun(daily) {
     stats: { kills: 0, damage: 0, taken: 0, shots: 0, bossKills: 0, bestCombo: 0 },
     score: 0, combo: 0, comboT: 0, comboPop: 0, hitStop: 0, hurtFlash: 0, whiteFlash: 0, zoomPunch: 0, milestones: {},
     camX: 0, camY: 0, wind: 0, gustTimer: 0, gustDir: 0, unlockedWeapons: ['assault'],
-    lull: 0, levelDone: false, cloudCover: 0, radarBlips: [],
+    lull: 0, levelDone: false, cloudCover: 0, radarBlips: [], missiles: [], msl: 0,
   };
   G.player = makePlayer();
   G.points += upg('kit');
@@ -888,6 +888,7 @@ function startLevel(idx) {
   if (idx > 0) { p.hp = Math.max(p.hp, Math.round(p.maxHp * 0.6)); }
   G.plan = buildPlan(idx); G.wpnBudget = irand(2, 3) + (has('salvage') ? 1 : 0); G.killsSinceDrop = 0;
   G.nukes = (G.nukes || 0) + 1 + (has('nuke') ? 1 : 0); addText(p.x, p.y - 44, 'NUKE BANKED (' + G.nukes + ')  [B]', '#ffe36b', true);
+  G.msl = 2; G.missiles = []; addText(p.x, p.y - 62, 'MISSILES LOADED (2)  [M]  •  [N] = ' + MSPEC[meta.mslSpec || 'std'].name + ' SPEC', MSPEC[meta.mslSpec || 'std'].c, true);
   buildParallax(theme);
   buildAmbient(theme);
   Audio.ambience(G.weather.id === 'rain' ? 'rain' : G.weather.id === 'storm' ? 'storm' : G.weather.id === 'sand' ? 'sand' : 'none');
@@ -1012,6 +1013,8 @@ function telegraph(e, dur) { e.tele = dur; e.teleMax = dur; if (e.x < W - 30) Au
 
 function updateEnemy(e, dt) {
   const p = P();
+  if (tickStatus(e, dt)) return;                       // burn DoT + radiation contagion; may kill
+  if (e.iceT > 0) { e.iceT -= dt; dt *= 0.5; }         // ICE: everything this enemy does runs at half speed
   e.t += dt; e.pt += dt;
   if (e.tele > 0) e.tele -= dt;
   if (e.vuln > 0) e.vuln -= dt;
@@ -1083,6 +1086,7 @@ function updateEnemy(e, dt) {
 function damageEnemy(e, dmg, x, y, silent) {
   if (e.dead) return;
   if (e.vuln > 0) dmg *= (e.isBoss ? 1.25 : 1.5) + (has('weakpoint') ? 0.5 : 0);
+  if (e.radT > 0) dmg *= 1.5;                          // RADIATION: defense resistance down 50%
   let crit = false;
   if (has('crit') && Math.random() < 0.15) { dmg *= 2; crit = true; }
   dmg *= (1 + 0.03 * G.invested.assault) * (1 + 0.05 * upg('aim'));
@@ -1327,6 +1331,8 @@ function updatePlayer(dt) {
   // abilities
   if (has('weld') && pressed.KeyF && p.weldCd <= 0) { p.weldCd = 60 * cdMult(); heal(p.maxHp * 0.25); Audio.sfx.weld(); spawnRing(p.x, p.y, '#5da8ff', 50); }
   if (pressed.KeyB && (G.nukes || 0) > 0 && !G.nuke) fireNuke();
+  if (pressed.KeyM && (G.msl || 0) > 0) fireMissile();
+  if (pressed.KeyN) cycleMslSpec();
   if (has('uplink') && pressed.KeyG && p.strikeCd <= 0) { p.strikeCd = 90 * cdMult(); const tg = allTargets().filter(e => e.x > p.x + 60 && e.x < W + 40).sort((a, b) => (b.isBoss ? 1e9 : b.hp) - (a.isBoss ? 1e9 : a.hp))[0]; G.strikes.push({ x: clamp(tg ? tg.x : p.x + 320, 200, W - 60), w: 170, t: 0 }); addText(p.x, p.y - 30, 'ORBITAL STRIKE INBOUND', '#ffc44d', true); Audio.sfx.warn(); }
   if (has('drone') && pressed.KeyR && p.droneCd <= 0) { p.droneCd = 45 * cdMult(); G.drones.push({ x: p.x - 40, y: p.y - 40, t: 10, ph: 0 }); addText(p.x, p.y - 30, 'REPAIR DRONE', '#5da8ff'); Audio.sfx.pickup(); }
   // weapon switching
@@ -1507,6 +1513,8 @@ function updateWorld(dt) {
   }
   G.strikes = G.strikes.filter(st => st.t < 1.6);
   if (G.nuke) updateNuke(dt / (G.slow || 1));
+  updateMissiles(dt);
+  if (G.boss && G.boss.dying === undefined) tickStatus(G.boss, dt);
   // particles / texts / fx
   for (const q of G.parts) { q.t -= dt; q.vy += q.g * dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= (1 - dt * 2); q.vy *= (1 - dt * 2); }
   G.parts = G.parts.filter(q => q.t > 0);
@@ -1794,6 +1802,7 @@ function drawPlayerOverlays(p) {
   for (const d of G.drones) { ctx.fillStyle = '#5da8ff'; ctx.beginPath(); ctx.arc(d.x, d.y, 7, 0, TAU); ctx.fill(); ctx.fillStyle = '#fff'; ctx.fillRect(d.x - 4, d.y - 1, 8, 2); ctx.fillRect(d.x - 1, d.y - 4, 2, 8); ctx.strokeStyle = 'rgba(93,168,255,0.4)'; ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(p.x, p.y); ctx.stroke(); }
 }
 function drawProjectiles() {
+  drawMissiles();
   for (const b of G.bullets) {
     ctx.strokeStyle = b.c; ctx.lineWidth = b.r; ctx.lineCap = 'round';
     if (b.trail.length > 1) { ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.moveTo(b.trail[0].x, b.trail[0].y); for (const t of b.trail) ctx.lineTo(t.x, t.y); ctx.stroke(); ctx.globalAlpha = 1; }
@@ -1824,6 +1833,80 @@ function drawProjectiles() {
     else if (k.kind === 'ammo') { ctx.fillStyle = '#ffd36b'; ctx.fillRect(-10, -8, 20, 16); ctx.fillStyle = '#640'; ctx.fillRect(-7, -5, 4, 10); ctx.fillRect(-2, -5, 4, 10); ctx.fillRect(3, -5, 4, 10); }
     else if (SPR.get('crate')) { ctx.strokeStyle = 'rgba(107,255,143,0.8)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 4, 24 + Math.sin(G.time * 4) * 3, 0, TAU); ctx.stroke(); SPR.draw('crate', 56, { oy: -10 }); }
     else { ctx.fillStyle = '#c9a25c'; ctx.fillRect(-14, -12, 28, 24); ctx.strokeStyle = '#432'; ctx.lineWidth = 2; ctx.strokeRect(-14, -12, 28, 24); ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(14, 0); ctx.moveTo(0, -12); ctx.lineTo(0, 12); ctx.stroke(); ctx.strokeStyle = 'rgba(107,255,143,0.8)'; ctx.beginPath(); ctx.arc(0, 0, 22 + Math.sin(G.time * 4) * 3, 0, TAU); ctx.stroke(); ctx.fillStyle = '#ddd'; ctx.beginPath(); ctx.moveTo(-14, -12); ctx.lineTo(0, -34); ctx.lineTo(14, -12); ctx.closePath(); ctx.fill(); }
+    ctx.restore();
+  }
+}
+// ============================================================================
+// MISSILES — 2 per level, explode on impact; elemental specs: FIRE (DoT) / ICE (slow) / RADIATION (contagious armor shred)
+// ============================================================================
+const MSPEC = {
+  std: { name: 'STANDARD', c: '#cfd8ea', flame: '#ffb066' },
+  fire: { name: 'FIRE', c: '#ff7a3d', flame: '#ff5d2d' },
+  ice: { name: 'ICE', c: '#9fe8ff', flame: '#bfefff' },
+  rad: { name: 'RADIATION', c: '#7dff3d', flame: '#a4ff5d' },
+};
+function cycleMslSpec() {
+  const order = ['std', 'fire', 'ice', 'rad'];
+  meta.mslSpec = order[(order.indexOf(meta.mslSpec || 'std') + 1) % order.length]; saveMeta();
+  const s = MSPEC[meta.mslSpec]; addText(P().x, P().y - 58, 'MISSILE SPEC: ' + s.name, s.c, true); Audio.sfx.reload();
+}
+function fireMissile() {
+  const p = P(); if ((G.msl || 0) <= 0 || p.dead) return; G.msl--;
+  G.missiles.push({ x: p.x + 34, y: p.y, vx: 240, spec: meta.mslSpec || 'std', t: 8 });
+  Audio.sfx.grenade(); G.shake += 3; spawnParts(p.x + 20, p.y, 6, MSPEC[meta.mslSpec || 'std'].flame, 90, 0.3);
+}
+function updateMissiles(dt) {
+  if (!G.missiles || !G.missiles.length) return;
+  const targets = allTargets();
+  for (const m of G.missiles) {
+    m.t -= dt; m.vx = Math.min(660, m.vx + 950 * dt); m.x += m.vx * dt;
+    const sc = MSPEC[m.spec];
+    if (Math.random() < dt * 45) spawnParts(m.x - 26, m.y + rand(-3, 3), 1, sc.flame, 55, 0.35);
+    if (m.x > W + 40) { m.t = 0; continue; }
+    let hit = false;
+    for (const e of targets) if (dist(m.x, m.y, e.x, e.y) < e.r + 10) { hit = true; break; }
+    if (!hit) for (const mm of G.mines) if (dist(m.x, m.y, mm.x, mm.y) < mm.r + 10) { hit = true; mm.t = 0; break; }
+    if (hit) { explodeMissile(m); m.t = 0; }
+  }
+  G.missiles = G.missiles.filter(m => m.t > 0);
+}
+function explodeMissile(m) {
+  const R = 95, sc = MSPEC[m.spec];
+  spawnExplosion(m.x, m.y, 55, sc.c); G.fx.push({ type: 'boom', x: m.x, y: m.y, r: R, c: sc.c, t: 0.3, life: 0.3 });
+  G.shake += 9; Audio.sfx.bigboom();
+  const base = 100 * (1 + 0.03 * G.invested.assault);
+  for (const e of allTargets()) if (dist(e.x, e.y, m.x, m.y) < R + e.r) {
+    damageEnemy(e, e.isBoss ? base * 1.4 : base, e.x, e.y);
+    if (e.dead || e.hp <= 0) continue;
+    if (m.spec === 'fire') { e.burnT = 6; addText(e.x, e.y - 16, 'BURNING', '#ff7a3d'); }
+    else if (m.spec === 'ice' && !e.isBoss) { e.iceT = 5; addText(e.x, e.y - 16, 'CHILLED -50%', '#9fe8ff'); }
+    else if (m.spec === 'rad') { e.radT = 8; addText(e.x, e.y - 16, 'IRRADIATED', '#7dff3d'); }
+  }
+}
+// status ticks shared by enemies and boss: burn DoT (4/s) + radiation contagion spread; returns true if the burn killed
+function tickStatus(e, dt) {
+  if (e.burnT > 0) {
+    e.burnT -= dt; e.hp -= 4 * dt; G.stats.damage += 4 * dt;
+    if (Math.random() < dt * 9) spawnParts(e.x + rand(-e.r, e.r) * 0.6, e.y + rand(-e.r, e.r) * 0.6, 1, pick(['#ff7a3d', '#ffb066', '#ffe36b']), 55, 0.35, -40);
+    if (e.hp <= 0) { killEnemy(e, true); return true; }
+  }
+  if (e.radT > 0) {
+    e.radT -= dt;
+    if (Math.random() < dt * 7) spawnParts(e.x + rand(-e.r, e.r) * 0.7, e.y + rand(-e.r, e.r) * 0.7, 1, '#7dff3d', 45, 0.45, -25);
+    for (const o of G.enemies) if (o !== e && !o.dead && !(o.radT > 0) && dist(o.x, o.y, e.x, e.y) < 50 + o.r + e.r) { o.radT = e.radT; addText(o.x, o.y - 14, 'SPREAD!', '#7dff3d'); }
+    if (G.boss && G.boss !== e && G.boss.dying === undefined && !(G.boss.radT > 0) && dist(G.boss.x, G.boss.y, e.x, e.y) < 50 + G.boss.r + e.r) { G.boss.radT = e.radT; addText(G.boss.x, G.boss.y - 44, 'IRRADIATED', '#7dff3d'); }
+  }
+  return false;
+}
+function drawMissiles() {
+  for (const m of (G.missiles || [])) {
+    const sc = MSPEC[m.spec], im = SPR.get('missile');
+    ctx.save(); ctx.translate(m.x, m.y);
+    ctx.fillStyle = sc.flame; ctx.globalAlpha = 0.85;
+    ctx.beginPath(); ctx.moveTo(-26, -3); ctx.lineTo(-26 - rand(10, 22), 0); ctx.lineTo(-26, 3); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
+    if (im) ctx.drawImage(im, -28, -11, 56, 22);
+    else { ctx.fillStyle = '#cfd8ea'; ctx.fillRect(-18, -4, 32, 8); ctx.fillStyle = sc.c; ctx.beginPath(); ctx.moveTo(14, -4); ctx.lineTo(24, 0); ctx.lineTo(14, 4); ctx.closePath(); ctx.fill(); }
     ctx.restore();
   }
 }
@@ -1948,6 +2031,7 @@ function drawHUD() {
   if (has('drone')) abil.push(['R', 'DRONE', p.droneCd, 45 * cdMult(), '#5da8ff']);
   if (has('uplink')) abil.push(['G', 'STRIKE', p.strikeCd || 0, 90 * cdMult(), '#ffc44d']);
   abil.push(['B', 'NUKE x' + (G.nukes || 0), (G.nukes || 0) > 0 ? 0 : 1, 1, '#ffe36b', 'EMPTY']);
+  abil.push(['M', 'MSL x' + (G.msl || 0), (G.msl || 0) > 0 ? 0 : 1, 1, MSPEC[meta.mslSpec || 'std'].c, 'EMPTY']);
   if (has('shield')) abil.push(['', 'SHIELD', p.shieldUp ? 0 : Math.max(p.shieldCd, 0.01), 30 * cdMult(), '#5da8ff']);
   if (has('reactive')) abil.push(['', 'REACT', p.reactiveCd, 300 * cdMult(), '#6bff8f']);
   abil.forEach((a, i) => { const x = 290 + i * 74, y = H - 66; ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x, y, 66, 46); const f = a[2] > 0 ? clamp(1 - a[2] / a[3], 0, 1) : 1; ctx.fillStyle = a[2] > 0 ? '#333' : a[4]; ctx.fillRect(x + 4, y + 4, 58 * f, 30); const abId = { SPACE: 'ab_dash', F: 'ab_weld', R: 'ab_drone', G: 'ab_strike', B: 'ab_nuke' }[a[0]] || (a[1] === 'SHIELD' ? 'ab_shield' : a[1] === 'REACT' ? 'ab_react' : null); if (abId && SPR.get(abId)) { ctx.globalAlpha = a[2] > 0 ? 0.5 : 0.9; SPR.icon(abId, x + 4, y + 4, 30); ctx.globalAlpha = 1; } ctx.fillStyle = '#fff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center'; ctx.fillText(a[1], x + (abId && SPR.get(abId) ? 42 : 33), y + 23); ctx.font = '10px monospace'; ctx.fillStyle = '#ccc'; ctx.fillText(a[2] > 0 ? (a[5] || Math.ceil(a[2]) + 's') : a[0] || 'READY', x + 33, y + 43); ctx.textAlign = 'left'; });
@@ -2029,6 +2113,8 @@ function drawTouchControls() {
   if (has('drone')) defs.push({ code: 'KeyR', label: 'DRONE', cd: p.droneCd, max: 45 * cdMult(), color: '#5da8ff' });
   if (has('uplink')) defs.push({ code: 'KeyG', label: 'STRIKE', cd: p.strikeCd || 0, max: 90 * cdMult(), color: '#ffc44d' });
   defs.push({ code: 'KeyB', label: 'NUKE ' + (G.nukes || 0), cd: (G.nukes || 0) > 0 ? 0 : 1, max: 1, color: '#ffe36b' });
+  defs.push({ code: 'KeyM', label: 'MSL ' + (G.msl || 0), cd: (G.msl || 0) > 0 ? 0 : 1, max: 1, color: MSPEC[meta.mslSpec || 'std'].c });
+  defs.push({ code: 'KeyN', label: MSPEC[meta.mslSpec || 'std'].name.slice(0, 4), cd: 0, max: 1, color: MSPEC[meta.mslSpec || 'std'].c });
   const owned = ownedWeapons();
   const slots = [[W - 70, H - 70], [W - 150, H - 100], [W - 90, H - 160], [W - 200, H - 190]];
   defs.forEach((d, i) => { const [x, y] = slots[i] || [W - 70 - i * 80, H - 70]; touchButtons.push({ x, y, r: 34, ...d }); });
