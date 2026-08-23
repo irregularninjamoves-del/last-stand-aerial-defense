@@ -623,6 +623,7 @@ const Store = (() => {
 const Ads = (() => {
   let pending = null;   // { next: screen to show afterwards, t: placeholder seconds left, ext: provider-driven }
   function show(next) {
+    screen = next; return;   // ★ ADS DISABLED for playtest/demo build — everything below is inert
     if (meta.premium || isDev()) { screen = next; return; }
     if (window.LS_ADS && window.LS_ADS.show) { pending = { next, t: 0, ext: true }; screen = 'ad'; try { window.LS_ADS.show(() => close()); } catch (e) { close(); } return; }
     pending = { next, t: 30, ext: false }; screen = 'ad';   // simulated interstitial: 30s
@@ -2263,7 +2264,7 @@ let storePage = 0;
 function drawStore(dt) {
   overlay(0.9); title('STORE', 44, '#ffd36b', 36);
   text('◈ ' + fmtCoins(meta.coins) + ' COINS' + (isDev() ? '  (DEV)' : ''), W / 2 - 200, 74, '#ffd36b', 16, 'center', true);
-  text(meta.premium ? '★ PREMIUM PASS ACTIVE  •  no ads' : 'Free edition  •  ads before runs & talent screens', W / 2 + 200, 74, meta.premium ? '#6bff8f' : '#8fa2c4', 13, 'center', true);
+  text(meta.premium ? '★ PREMIUM PASS ACTIVE' : 'Free edition  •  ad-free playtest build', W / 2 + 200, 74, meta.premium ? '#6bff8f' : '#8fa2c4', 13, 'center', true);
   // ---- skins grid: 4 x 2 per page, paged
   const cols = 4, rows = 2, per = cols * rows, cw = 296, ch = 150, gap = 12, x0 = (W - cw * cols - gap * (cols - 1)) / 2, y0 = 90;
   const pages = Math.ceil(SKINS.length / per); storePage = clamp(storePage, 0, pages - 1);
